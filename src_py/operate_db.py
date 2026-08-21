@@ -1,5 +1,6 @@
 import os
 import psycopg2
+from datetime import date
 
 conn = psycopg2.connect(
     host="localhost",
@@ -8,7 +9,9 @@ conn = psycopg2.connect(
     user="rokey",
     password="rokey"
     )
+
 cur = conn.cursor()
+
 # 테이블 create
 # 1. 사용자 정보 테이블
 create_table_info_users = '''
@@ -42,6 +45,7 @@ CREATE TABLE info_users (
         CHECK (user_name ~ '^[가-힣A-Za-z]{1,10}$')
 );
 '''
+# 2. 작업 내역 테이블
 create_table_exec_translations = '''
 CREATE TABLE exec_translations (
     exec_id BIGINT NOT NULL,
@@ -78,7 +82,42 @@ CREATE TABLE exec_translations (
         CHECK (translate_result IN (TRUE, FALSE))
 );
 '''
-cur.execute(create_table_exec_translations)
+
+today = str(date.today())
+# 데이터 insert
+# 1. 사용자 회원가입 시
+insert_data_info_users = f'''
+INSERT INTO info_users
+    (user_id, user_pw, user_name, registry_date, recent_enter_date)
+VALUES
+    ('rokey123', 'rokey123', '홍길동', '{today}', '{today}');
+'''
+# 2. 사용자 작업 수행 시
+insert_data_exec_translations = f'''
+INSERT INTO exec_translations
+    (exec_id, user_id, text, request_date)
+VALUES
+    (1, 'rokey123', '안녕하세요', '{today}');
+'''
+
+today = str(date.today())
+# 데이터 insert
+# 1. 사용자 접속 시
+update_data_info_users = f'''
+UPDATE info_users
+SET recent_enter_date = '{today}'
+WHERE user_id = 'user01';
+'''
+# 2. 로봇 작업 결과 수신 시
+update_data_exec_translations = f'''
+UPDATE exec_translations
+SET translate_result = TRUE
+WHERE exec_id = 1;
+'''
+
+cur.execute(update_data_exec_translations)
+conn.commit()
+
 cur.close()
 conn.close()
 
