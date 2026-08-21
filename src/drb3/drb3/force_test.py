@@ -43,12 +43,17 @@ def force_control():
     
 
     task_compliance_ctrl()
-    set_stiffnessx([2000, 2000, 300, 200 ,200 ,200], time =0) #강도 조절 가능
+    set_stiffnessx([10, 10, 10, 200 ,200 ,200], time =0) #강도 조절 가능
     print("순응 제어 시작")
-    set_desired_force([0,0,-5, 0, 0, 0], [0, 0, 1, 0, 0, 0], time=0.0,mod=DR_FC_MOD_REL) #힘은 쓰면서 테스트 필요
+    set_desired_force([0,0,-1, 0, 0, 0], [0, 0, 1, 0, 0, 0], time=0.0,mod=DR_FC_MOD_REL) #힘은 쓰면서 테스트 필요
     print("힘 제어 시작")
 
-
+def grip_close():
+    from DSR_ROBOT2 import set_digital_output, wait
+    
+    set_digital_output(1, 1)
+    set_digital_output(2, 0)
+    wait(1.0)
 #메인 함수
 def main(args=None):
     rclpy.init(args=args)
@@ -59,17 +64,17 @@ def main(args=None):
     DR_init.__dsr__node = node
     #메인 명령어
     from DSR_ROBOT2 import (
-            task_compliance_ctrl, set_stiffnessx, set_desired_force, amove_periodic, DR_FC_MOD_REL, DR_AXIS_Z, DR_TOOL,
+            task_compliance_ctrl, set_stiffnessx, set_desired_force, amove_periodic, DR_FC_MOD_REL, DR_AXIS_Z, DR_TOOL, DR_MV_MOD_REL,
             check_position_condition, release_force, release_compliance_ctrl, check_force_condition, wait, movej, movel
         )
     from DR_common2 import posx, posj
     Q1 = posj(0.0, 0.0, 90.0, 0.0, 90.0, 0.0)
-    Q2 = posx(0, 0, 90, 0, 0, 0) #작업 시작위치 이동
-    draw_point1 = posx(5, 0, 0, 0, 0, 0)
-    draw_point2 = posx(0, 5, 0, 0, 0, 0)
-    draw_point3 = posx(-5, 0, 0, 0, 0, 0)
-    draw_point4 = posx(0, 5, 0, 0, 0, 0)
-    draw_point5 = posx(5, 0, 0, 0, 0, 0)
+    Q2 = posx(0, 0, 0, 0, 0, 0) #작업 시작위치 이동
+    draw_point1 = posx(-50, 0, 0, 0, 0, 0)
+    draw_point2 = posx(0, 50, 0, 0, 0, 0)
+    draw_point3 = posx(-10, 0, 0, 0, 0, 0)
+    draw_point4 = posx(0, -50, 0, 0, 0, 0)
+    draw_point5 = posx(0, 0, 0, 0, 0, 0)
 
     draw = check_force_condition(DR_AXIS_Z, min=2.5, max=5)
 
@@ -79,17 +84,26 @@ def main(args=None):
         initialize_robot()
         node.get_logger().info(f"Moving to joint position: {Q1}")
         movej(Q1, vel=VELOCITY, acc=ACC)
+        print("1")
         movel(Q2, vel=VELOCITY, acc=ACC, ref = DR_TOOL)
-        force_control()
+        print("2")
+        #force_control()
+        print("3")
+        grip_close()
+        node.get_logger().info(f"그리퍼 닫기")
         wait(5.0)
-        movel(draw_point1, vel=VELOCITY, acc=ACC, ref = DR_TOOL)
-        movel(draw_point2, vel=VELOCITY, acc=ACC, ref = DR_TOOL)
-        movel(draw_point3, vel=VELOCITY, acc=ACC, ref = DR_TOOL)
-        movel(draw_point4, vel=VELOCITY, acc=ACC, ref = DR_TOOL)
-        movel(draw_point5, vel=VELOCITY, acc=ACC, ref = DR_TOOL)
-        release_force(time=0.0)
-        release_compliance_ctrl()
-
+        movel(draw_point1, vel=VELOCITY, acc=ACC, mod=DR_MV_MOD_REL)
+        print("1번")
+        movel(draw_point2, vel=VELOCITY, acc=ACC, mod=DR_MV_MOD_REL)
+        print("2번")
+        movel(draw_point3, vel=VELOCITY, acc=ACC, mod=DR_MV_MOD_REL)
+        print("4")
+        movel(draw_point4, vel=VELOCITY, acc=ACC, mod=DR_MV_MOD_REL)
+        print("5")
+        movel(draw_point5, vel=VELOCITY, acc=ACC, mod=DR_MV_MOD_REL)
+        #release_force(time=0.0)
+        #release_compliance_ctrl()
+        
        
             
 
