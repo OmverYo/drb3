@@ -62,4 +62,4 @@ ros2 launch  dsr_bringup2 dsr_bringup2_rviz.launch.py mode:=real host:=192.168.1
 ros2 run my_project main_control.py
 ```
 
-asd
+
