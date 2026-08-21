@@ -1,139 +1,445 @@
 import rclpy
 import DR_init
 
+# ============================================================
 # 로봇 설정
+# ============================================================
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
-VELOCITY, ACC = 30.0, 30.0
+ROBOT_TOOL = "Tool Weight"
+ROBOT_TCP = "GripperDA"
+
+VELOCITY = 30
+ACC = 30
 
 DR_init.__dsr__id = ROBOT_ID
 DR_init.__dsr__model = ROBOT_MODEL
 
+
+# ============================================================
+# Tool / TCP
+# ============================================================
+def initialize_robot():
+    from DSR_ROBOT2 import set_tool, set_tcp
+
+    set_tool(ROBOT_TOOL)
+    set_tcp(ROBOT_TCP)
+
+
+# ============================================================
+# Gripper
+# ============================================================
+def grip_open():
+    from DSR_ROBOT2 import set_digital_output, wait
+
+    set_digital_output(1, 0)
+    set_digital_output(2, 1)
+    wait(1.0)
+
+
+def grip_close():
+    from DSR_ROBOT2 import set_digital_output, wait
+
+    set_digital_output(1, 1)
+    set_digital_output(2, 0)
+    wait(1.0)
+
+
+# ============================================================
+# Main
+# ============================================================
 def main(args=None):
+
     rclpy.init(args=args)
-    node = rclpy.create_node("sun_gear_assembly_node", namespace=ROBOT_ID)
+
+    node = rclpy.create_node(
+        "gripper",
+        namespace=ROBOT_ID
+    )
+
     DR_init.__dsr__node = node
 
-    try:
-        from DSR_ROBOT2 import (
-            movej, movel, set_digital_output, wait,
-            task_compliance_ctrl, set_desired_force, amove_periodic,
-            check_position_condition, stop, release_force, release_compliance_ctrl
+    from DSR_ROBOT2 import wait, movej, movel, DR_TOOL
+    from DR_common2 import posx, posj
+
+    # --------------------------------------------------------
+    # 시작 위치
+    # Q1 = 펜촉이 종이에 이미 닿아 있는 상태
+    # --------------------------------------------------------
+    Q1 = posj(
+        0.0,
+        0.0,
+        90.0,
+        0.0,
+        90.0,
+        0.0
+    )
+
+    # --------------------------------------------------------
+    # 펜 상태
+    #
+    # 프로그램 시작 시:
+    # 펜은 이미 종이에 닿아 있음
+    # 따라서 "down"으로 시작해야 함.
+    # --------------------------------------------------------
+    pen_state = "down"
+
+    # --------------------------------------------------------
+    # Tool 좌표계 기준 상대 이동
+    # --------------------------------------------------------
+    def move_rel(dx, dy, dz=0.0):
+
+        movel(
+            posx(
+                dx,
+                dy,
+                dz,
+                0.0,
+                0.0,
+                0.0
+            ),
+            vel=VELOCITY,
+            acc=ACC,
+            ref=DR_TOOL
         )
-        from DR_common2 import (
-            posx, posj, ON, OFF, DR_TOOL, DR_BASE, DR_AXIS_Z, DR_SSTOP
-        )
-    except ImportError as e:
-        node.get_logger().error(f"Error importing DSR_ROBOT2 : {e}")
-        return
 
-    # 그리퍼 제어 함수
-    def grasp():
-        set_digital_output(1, ON)
-        set_digital_output(2, OFF)
-        wait(1.0)
+    # --------------------------------------------------------
+    # 펜 올리기
+    # --------------------------------------------------------
+    def pen_up():
 
-    def release():
-        set_digital_output(1, OFF)
-        set_digital_output(2, ON)
-        wait(1.0)
+        nonlocal pen_state
 
-    # 초기 위치 및 Z축 하강 오프셋
-    Q1 = posj(0.0, 0.0, 90.0, 0.0, 90.0, 0.0)
-    down_z = 85.0
-    pos_down = posx(0.0, 0.0, down_z, 0.0, 0.0, 0.0)
+        if pen_state == "down":
 
-    # TODO: 실제 환경에 맞게 티칭된 Global 좌표값 입력 필요
-    Global_p1 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0) 
-    Global_p2 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    Global_p3 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    Global_p4 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    Global_p5 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    Global_p6 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    Global_c1 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    Global_c2 = posx(0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+            # 종이에서 10 mm 위로 이동
+            move_rel(
+                0.0,
+                0.0,
+                -10.0
+            )
 
+            pen_state = "up"
+
+    # --------------------------------------------------------
+    # 펜 내리기
+    # --------------------------------------------------------
+    def pen_down():
+
+        nonlocal pen_state
+
+        if pen_state == "up":
+
+            # 종이 방향으로 10 mm 이동
+            move_rel(
+                0.0,
+                0.0,
+                10.0
+            )
+
+            pen_state = "down"
+
+    # ========================================================
+    # 한 글자 그리기
+    #
+    # 중요:
+    # 글자 시작 시 펜 상태를 강제로 내리지 않는다.
+    #
+    # 첫 글자인 "감"은 Q1에서 이미 펜이 종이에 닿아 있으므로
+    # 첫 획을 바로 시작한다.
+    #
+    # 이후 글자들은 글자 시작 전에 pen_up 상태에서
+    # 시작 위치로 이동한 뒤 pen_down 한다.
+    # ========================================================
+    def draw_letter(
+        strokes,
+        start_x,
+        start_y,
+        first_stroke_contact=False
+    ):
+
+        nonlocal pen_state
+
+        cur_x = 0.0
+        cur_y = 0.0
+
+        # ----------------------------------------------------
+        # 첫 번째 글자가 아니면
+        # 펜을 들고 글자의 시작 위치로 이동
+        # ----------------------------------------------------
+        if not first_stroke_contact:
+
+            pen_up()
+
+            move_rel(
+                start_x - cur_x,
+                start_y - cur_y
+            )
+
+            cur_x = start_x
+            cur_y = start_y
+
+            # 새 글자의 첫 획을 위해 펜을 내림
+            pen_down()
+
+        else:
+
+            # 첫 글자는 Q1에서 이미 종이에 닿아 있음.
+            #
+            # start_x/start_y가 (0,0)이므로
+            # 별도의 Z 이동을 하지 않는다.
+            cur_x = start_x
+            cur_y = start_y
+
+        # ----------------------------------------------------
+        # 획 그리기
+        # ----------------------------------------------------
+        for stroke_index, stroke in enumerate(strokes):
+
+            # 첫 획이 아니라면
+            # 이전 획이 끝난 상태에서 펜을 들고
+            # 다음 획 시작점으로 이동
+            if stroke_index > 0:
+
+                pen_up()
+
+                stroke_start_x = stroke[0][0]
+                stroke_start_y = stroke[0][1]
+
+                move_rel(
+                    stroke_start_x - cur_x,
+                    stroke_start_y - cur_y
+                )
+
+                cur_x = stroke_start_x
+                cur_y = stroke_start_y
+
+                # 다음 획 시작
+                pen_down()
+
+            # ------------------------------------------------
+            # 실제 획 이동
+            # ------------------------------------------------
+            for x, y in stroke:
+
+                dx = x - cur_x
+                dy = y - cur_y
+
+                move_rel(
+                    dx,
+                    dy
+                )
+
+                cur_x = x
+                cur_y = y
+
+        # ----------------------------------------------------
+        # 글자 하나가 끝났으면 펜을 들어 올린다.
+        #
+        # 다음 글자로 이동할 때 종이를 긁지 않도록 함.
+        # ----------------------------------------------------
+        pen_up()
+
+        return cur_x, cur_y
+
+
+    # ========================================================
+    # "감사합니다" 획 데이터
+    # ========================================================
+
+    gam = [
+        [(0, 0), (15, 0), (15, 15)],
+        [(25, 0), (25, 20)],
+        [(25, 10), (30, 10)],
+        [(5, 25), (20, 25), (20, 40), (5, 40), (5, 25)]
+    ]
+
+    sa = [
+        [(15, 0), (5, 20)],
+        [(15, 0), (25, 20)],
+        [(35, 0), (35, 20)],
+        [(35, 10), (40, 10)]
+    ]
+
+    hab = [
+        [(15, 0), (15, 5)],
+        [(5, 5), (25, 5)],
+        [(10, 8), (20, 8), (20, 18), (10, 18), (10, 8)],
+        [(30, 0), (30, 20)],
+        [(30, 10), (35, 10)],
+        [(5, 22), (5, 40)],
+        [(25, 22), (25, 40)],
+        [(5, 30), (25, 30)],
+        [(5, 40), (25, 40)]
+    ]
+
+    ni = [
+        [(5, 0), (5, 20), (25, 20)],
+        [(35, 0), (35, 25)]
+    ]
+
+    da = [
+        [(20, 0), (5, 0), (5, 20), (20, 20)],
+        [(30, 0), (30, 20)],
+        [(30, 10), (35, 10)]
+    ]
+
+
+    # ========================================================
+    # 글자 위치
+    #
+    # "감사합니다"를 위/아래가 아니라
+    #
+    # 감 → 사 → 합 → 니 → 다
+    #
+    # 왼쪽에서 오른쪽으로 배치
+    # ========================================================
+
+    LETTER_GAP_X = 50.0
+
+    GAM_X = 0.0
+    SA_X = GAM_X + LETTER_GAP_X
+    HAB_X = SA_X + LETTER_GAP_X
+    NI_X = HAB_X + LETTER_GAP_X
+    DA_X = NI_X + LETTER_GAP_X
+
+    LETTER_Y = 0.0
+
+
+    # ========================================================
+    # 실행
+    # ========================================================
     try:
-        node.get_logger().info("작업 시작")
-        release()
-        movej(Q1, vel=VELOCITY, acc=ACC)
 
-        # 1 Cycle
-        movel(Global_p1, vel=VELOCITY, acc=ACC)
-        movel(pos_down, vel=VELOCITY, acc=ACC, ref=DR_TOOL)
-        grasp()
-        movel(Global_p1, vel=VELOCITY, acc=ACC)
-        
-        movel(Global_p4, vel=VELOCITY, acc=ACC)
-        movel(pos_down, vel=VELOCITY, acc=ACC, ref=DR_TOOL)
-        release()
+        initialize_robot()
 
-        # 2 Cycle
-        movel(Global_p4, vel=VELOCITY, acc=ACC)
-        movel(Global_p2, vel=VELOCITY, acc=ACC)
-        movel(pos_down, vel=VELOCITY, acc=ACC, ref=DR_TOOL)
-        grasp()
-        movel(Global_p2, vel=VELOCITY, acc=ACC)
+        grip_open()
 
-        movel(Global_p5, vel=VELOCITY, acc=ACC)
-        movel(pos_down, vel=VELOCITY, acc=ACC, ref=DR_TOOL)
-        release()
+        node.get_logger().info(
+            f"Moving to joint position: {Q1}"
+        )
 
-        # 3 Cycle
-        movel(Global_p5, vel=VELOCITY, acc=ACC)
-        movel(Global_p3, vel=VELOCITY, acc=ACC)
-        movel(pos_down, vel=VELOCITY, acc=ACC, ref=DR_TOOL)
-        grasp()
-        movel(Global_p3, vel=VELOCITY, acc=ACC)
+        movej(
+            Q1,
+            vel=VELOCITY,
+            acc=ACC
+        )
 
-        movel(Global_p6, vel=VELOCITY, acc=ACC)
-        movel(pos_down, vel=VELOCITY, acc=ACC, ref=DR_TOOL)
-        release()
+        print("펜을 쥐어주세요 (5초 대기)")
+        wait(5.0)
 
-        # 조립 준비 및 어프로치
-        movel(Global_p6, vel=VELOCITY, acc=ACC)
-        movel(Global_c1, vel=VELOCITY, acc=ACC)
-        movel(pos_down, vel=VELOCITY, acc=ACC, ref=DR_TOOL)
-        grasp()
-        movel(Global_c1, vel=VELOCITY, acc=ACC)
+        grip_close()
 
-        movel(Global_c2, vel=VELOCITY, acc=ACC)
+        # ----------------------------------------------------
+        # 중요
+        #
+        # Q1에서 이미 펜촉이 종이에 닿아 있다고 가정.
+        #
+        # 따라서 pen_state = "down"
+        #
+        # 절대로 시작하면서 pen_down()을 호출하지 않는다.
+        # ----------------------------------------------------
+        pen_state = "down"
 
-        # 순응-힘 제어 및 삽입 시작
-        node.get_logger().info("순응 제어 및 삽입 모션 시작")
-        stx = [500.0, 500.0, 500.0, 200.0, 200.0, 200.0]
-        task_compliance_ctrl(stx, time=0.0)
+        print("글쓰기 시작: 감사합니다")
 
-        fd = [0.0, 0.0, -15.0, 0.0, 0.0, 0.0]
-        fctrl_dir = [0, 0, 1, 0, 0, 0]
-        set_desired_force(fd, dir=fctrl_dir)
+        # ----------------------------------------------------
+        # 1. 감
+        #
+        # Q1이 바로 "감"의 첫 획 시작점이므로
+        # 펜을 내리지 않고 바로 시작.
+        # ----------------------------------------------------
+        draw_letter(
+            gam,
+            GAM_X,
+            LETTER_Y,
+            first_stroke_contact=True
+        )
 
-        amp = [0.0, 0.0, 0.0, 0.0, 0.0, 10.0]
-        period = [0.0, 0.0, 0.0, 0.0, 0.0, 1.0]
-        amove_periodic(amp, period, repeat=100, ref=DR_TOOL)
+        # ----------------------------------------------------
+        # 2. 사
+        #
+        # 감이 끝나면 펜이 올라간 상태.
+        # 사의 시작 위치로 이동 후 펜을 내림.
+        # ----------------------------------------------------
+        draw_letter(
+            sa,
+            SA_X,
+            LETTER_Y,
+            first_stroke_contact=False
+        )
 
-        # 삽입 감시 루프
-        while True:
-            pcon1 = check_position_condition(DR_AXIS_Z, max=70.0, ref=DR_BASE)
-            if pcon1 == 1:
-                stop(DR_SSTOP)
-                node.get_logger().info("삽입 완료 감지")
-                break
-            wait(0.1)
+        # ----------------------------------------------------
+        # 3. 합
+        # ----------------------------------------------------
+        draw_letter(
+            hab,
+            HAB_X,
+            LETTER_Y,
+            first_stroke_contact=False
+        )
 
-        # 제어 해제
-        release()
-        release_force(time=0.0)
-        release_compliance_ctrl()
+        # ----------------------------------------------------
+        # 4. 니
+        # ----------------------------------------------------
+        draw_letter(
+            ni,
+            NI_X,
+            LETTER_Y,
+            first_stroke_contact=False
+        )
+
+        # ----------------------------------------------------
+        # 5. 다
+        # ----------------------------------------------------
+        draw_letter(
+            da,
+            DA_X,
+            LETTER_Y,
+            first_stroke_contact=False
+        )
+
+        print("작업 완료")
+
 
     except KeyboardInterrupt:
-        node.get_logger().info("프로그램 정지")
+
+        print(
+            "\nNode interrupted by user. "
+            "Shutting down..."
+        )
+
+
     except Exception as e:
-        node.get_logger().error(f"로봇 에러 발생: {e}")
+
+        print(
+            f"An unexpected error occurred: {e}"
+        )
+
+
     finally:
-        movej(Q1, vel=VELOCITY, acc=ACC)
-        node.destroy_node()
+
+        # ----------------------------------------------------
+        # 마지막에는 펜을 반드시 올린다.
+        # ----------------------------------------------------
+        if pen_state == "down":
+
+            pen_up()
+
+        # Q1 복귀
+        movej(
+            Q1,
+            vel=VELOCITY,
+            acc=ACC
+        )
+
+        grip_open()
+
         rclpy.shutdown()
 
+
+# ============================================================
+# Entry point
+# ============================================================
 if __name__ == "__main__":
     main()
