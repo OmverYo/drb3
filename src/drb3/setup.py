@@ -24,6 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'test = dr_b3.gripper_test:main',
+            'force = dr_b3.force_test:main'
         ],
     },
 )
