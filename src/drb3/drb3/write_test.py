@@ -15,37 +15,20 @@ ACC = 30
 DR_init.__dsr__id = ROBOT_ID
 DR_init.__dsr__model = ROBOT_MODEL
 
-# robot star setting 
 def initialize_robot():
     """로봇의 Tool과 TCP를 설정"""
     from DSR_ROBOT2 import set_tool, set_tcp
-
-
-    # 설정된 상수 출력
-    print("-" * 50)
-    print("Initializing robot with the following settings:")
-    print(f"ROBOT_ID: {ROBOT_ID}")
-    print(f"ROBOT_MODEL: {ROBOT_MODEL}")
-    print(f"ROBOT_TCP: {ROBOT_TCP}")
-    print(f"ROBOT_TOOL: {ROBOT_TOOL}")
-    print(f"VELOCITY: {VELOCITY}")
-    print(f"ACC: {ACC}")
-    print("-" * 50)
-
-    # Tool과 TCP 설정
     set_tool(ROBOT_TOOL)
     set_tcp(ROBOT_TCP)
 
 def grip_open():
     from DSR_ROBOT2 import set_digital_output, wait
-    
     set_digital_output(1, 0)
     set_digital_output(2, 1)
     wait(1.0)
 
 def grip_close():
     from DSR_ROBOT2 import set_digital_output, wait
-    
     set_digital_output(1, 1)
     set_digital_output(2, 0)
     wait(1.0)
@@ -53,68 +36,94 @@ def grip_close():
 def main(args=None):
     rclpy.init(args=args)
     node = rclpy.create_node("gripper", namespace=ROBOT_ID)
-
-    # DR_init에 노드 설정
     DR_init.__dsr__node = node
-    from DSR_ROBOT2 import wait, movej, movel, DR_SSTOP, movesx, DR_MVS_VEL_CONST, DR_BASE, DR_TOOL
-    from DR_common2 import posx, posj
-    Q1 = posj(0.0, 0.0, 90.0, 0.0, 90.0, 0.0)
-    p0=posx(0.0, 0.0, -10.0, 0.0, 0.0, 0.0) #넘어가기전 올라가기
-    p1=posx(0.0, 0.0, 10.0, 0.0, 0.0, 0.0)  #넘어가서 내려가기
-    p2=posx(-12.5, 0.0, 0.0, 0.0, 0.0, 0.0)
-    p3=posx(0, -10.0, 0.0, 0.0, 0.0, 0.0)
-    p4=posx(-40, 10, 0 , 0 ,0 ,0) #ㄱ 에서 ㅏ로 이동
-    p5=posx(0.0, -7.5, 0.0, 0.0, 0.0, 0.0)
-    p6=posx(-5.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    p7=posx(5.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    p8 = posx(40, -2.5, 0 ,0 ,0 ,0)# ㅏ 에서 ㅁ으로 이동
-    p9=posx(-40.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    p10=posx(0.0, -10.0, 0.0, 0.0, 0.0, 0.0)
-    p11=posx(40.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-    p12=posx(0.0, 10.0, 0.0, 0.0, 0.0, 0.0)
     
+    from DSR_ROBOT2 import wait, movej, movel, DR_TOOL
+    from DR_common2 import posx, posj
+    
+    Q1 = posj(0.0, 0.0, 90.0, 0.0, 90.0, 0.0)
 
+    # --- 펜 이동을 위한 헬퍼 함수 ---
+    def move_rel(dx, dy, dz=0.0):
+        # 현재 위치 기준 상대 이동
+        movel(posx(dx, dy, dz, 0.0, 0.0, 0.0), vel=VELOCITY, acc=ACC, ref=DR_TOOL)
 
-    plist1 = [p2, p3]
-    plist2 = [p5, p6, p7, p8]
-    plist3 = [p9, p10, p11, p12]
+    def pen_up():
+        move_rel(0.0, 0.0, -10.0) # 종이에서 떼기
 
+    def pen_down():
+        move_rel(0.0, 0.0, 10.0)  # 종이에 닿기
+
+    def draw_letter(strokes, offset_x=0.0, offset_y=0.0):
+        """2D 좌표로 정의된 획(strokes)을 그리고, 다음 글자를 위해 기준점을 이동합니다."""
+        cur_x, cur_y = 0.0, 0.0
+        
+        for stroke in strokes:
+            # 획의 시작점으로 이동
+            start_x, start_y = stroke[0]
+            pen_up()
+            move_rel(start_x - cur_x, start_y - cur_y)
+            pen_down()
+            cur_x, cur_y = start_x, start_y
+            
+            # 획 긋기
+            for x, y in stroke[1:]:
+                move_rel(x - cur_x, y - cur_y)
+                cur_x, cur_y = x, y
+                
+        # 글자 완성 후 다음 글자 시작 위치로 이동
+        pen_up()
+        move_rel(offset_x - cur_x, offset_y - cur_y)
+
+    # --- '감사합니다' 획 디자인 (0~40mm 스케일) ---
+    gam = [
+        [(0,0), (15,0), (15,15)],                   # ㄱ
+        [(25,0), (25,20)], [(25,10), (30,10)],      # ㅏ
+        [(5,25), (20,25), (20,40), (5,40), (5,25)]  # ㅁ
+    ]
+    sa = [
+        [(15,0), (5,20)], [(15,0), (25,20)],        # ㅅ
+        [(35,0), (35,20)], [(35,10), (40,10)]       # ㅏ
+    ]
+    hab = [
+        [(15,0), (15,5)], [(5,5), (25,5)],          # ㅎ 상단
+        [(10,8), (20,8), (20,18), (10,18), (10,8)], # ㅎ 이응(사각형으로 대체)
+        [(30,0), (30,20)], [(30,10), (35,10)],      # ㅏ
+        [(5,22), (5,40)], [(25,22), (25,40)],       # ㅂ 세로
+        [(5,30), (25,30)], [(5,40), (25,40)]        # ㅂ 가로
+    ]
+    ni = [
+        [(5,0), (5,20), (25,20)],                   # ㄴ
+        [(35,0), (35,25)]                           # ㅣ
+    ]
+    da = [
+        [(20,0), (5,0), (5,20), (20,20)],           # ㄷ
+        [(30,0), (30,20)], [(30,10), (35,10)]       # ㅏ
+    ]
 
     try:
-            
         initialize_robot()
         grip_open()
         node.get_logger().info(f"Moving to joint position: {Q1}")
         movej(Q1, vel=VELOCITY, acc=ACC)
         
-        print("pen please")
+        print("펜을 쥐어주세요 (5초 대기)")
         wait(5.0)
-
-
         grip_close()
-        node.get_logger().info(f"griper open")
         
-        print("ㄱ 시작")
-        movesx(plist1, vel=20, acc = 20, ref=DR_TOOL, vel_opt = DR_MVS_VEL_CONST)
-        movel(p0, vel =VELOCITY, acc=ACC, ref=DR_TOOL)
-        movel(p4, vel =VELOCITY, acc=ACC, ref=DR_TOOL)
-        movel(p1, vel =VELOCITY, acc=ACC, ref=DR_TOOL)
-        print("ㅏ 시작")
-        movesx(plist2, vel=20, acc = 20, ref=DR_TOOL, vel_opt = DR_MVS_VEL_CONST)
-        movel(p0, vel =VELOCITY, acc=ACC, ref=DR_TOOL)
-        movel(p8, vel =VELOCITY, acc=ACC, ref=DR_TOOL)
-        movel(p1, vel =VELOCITY, acc=ACC, ref=DR_TOOL)
-        print("ㅁ 시작")
-        movesx(plist3, vel=20, acc = 20, ref=DR_TOOL, vel_opt = DR_MVS_VEL_CONST)
-        movel(p0, vel =VELOCITY, acc=ACC, ref=DR_TOOL)
+        print("글쓰기 시작: 감사합니다")
         
-
-
-        #grip_open()
-        node.get_logger().info(f"griper close")
-
+        # 글자 간격 설정 (로봇 설정에 따라 X 또는 Y에 -50.0 등 부여)
+        NEXT_LETTER_X = 0.0
+        NEXT_LETTER_Y = -50.0 
         
-        node.get_logger().info(f"STOP")
+        draw_letter(gam, NEXT_LETTER_X, NEXT_LETTER_Y)
+        draw_letter(sa,  NEXT_LETTER_X, NEXT_LETTER_Y)
+        draw_letter(hab, NEXT_LETTER_X, NEXT_LETTER_Y)
+        draw_letter(ni,  NEXT_LETTER_X, NEXT_LETTER_Y)
+        draw_letter(da,  NEXT_LETTER_X, NEXT_LETTER_Y)
+        
+        print("작업 완료")
         
     except KeyboardInterrupt:
         print("\nNode interrupted by user. Shutting down...")
@@ -122,7 +131,8 @@ def main(args=None):
         print(f"An unexpected error occurred: {e}")
     finally:
         movej(Q1, vel=VELOCITY, acc=ACC)
-        
+        grip_open()
         rclpy.shutdown()
+
 if __name__ == "__main__":
     main()
