@@ -25,7 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'test = drb3.gripper_test:main',
-            'force = drb3.force_test:main'
+            'force = drb3.force_test:main',
+            'write = drb3.write_test:main'
         ],
     },
 )
