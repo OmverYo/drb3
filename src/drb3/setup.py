@@ -27,7 +27,7 @@ setup(
             'test = drb3.gripper_test:main',
             'force = drb3.force_test:main',
             'write = drb3.write_test:main',
-            'testtest = drb3.test:main',
+
         ],
     },
 )

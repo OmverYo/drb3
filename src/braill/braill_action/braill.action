@@ -1,0 +1,11 @@
+# Goal (클라이언트가 서버로 보내는 데이터: bit_b 1차원 배열)
+int32[] braille_data
+---
+# Result (서버가 작업을 끝내고 클라이언트로 보내는 최종 결과)
+bool success
+string message
+---
+# Feedback (서버가 작업 중간중간 클라이언트에게 보내는 진행률)
+int32 total_characters
+int32 current_character
+float32 progress_percentage

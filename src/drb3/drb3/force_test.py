@@ -87,7 +87,7 @@ def main(args=None):
         print("1")
         movel(Q2, vel=VELOCITY, acc=ACC, ref = DR_TOOL)
         print("2")
-        #force_control()
+        #force_control() #힘제어 없는 상태
         print("3")
         grip_close()
         node.get_logger().info(f"그리퍼 닫기")
@@ -101,7 +101,7 @@ def main(args=None):
         movel(draw_point4, vel=VELOCITY, acc=ACC, mod=DR_MV_MOD_REL)
         print("5")
         movel(draw_point5, vel=VELOCITY, acc=ACC, mod=DR_MV_MOD_REL)
-        #release_force(time=0.0)
+        #release_force(time=0.0) #힘제어 다시 구현시 켜야됨
         #release_compliance_ctrl()
         
        
