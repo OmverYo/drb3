@@ -1,445 +1,249 @@
 import rclpy
 import DR_init
 
-# ============================================================
-# 로봇 설정
-# ============================================================
+# 로봇 설정 상수
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
 ROBOT_TOOL = "Tool Weight"
 ROBOT_TCP = "GripperDA"
 
-VELOCITY = 30
-ACC = 30
+VELOCITY, ACC = 200, 200
+PEN_Z_VELOCITY, PEN_Z_ACC = 200, 200
+EPS = 1e-3
 
 DR_init.__dsr__id = ROBOT_ID
 DR_init.__dsr__model = ROBOT_MODEL
 
 
-# ============================================================
-# Tool / TCP
-# ============================================================
+# ==========================================
+# [1] 한글 동적 렌더링 엔진 (Hangul Generator)
+# ==========================================
+class HangulEngine:
+    # 초성, 중성, 종성 유니코드 리스트
+    CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+    JUNG = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ']
+    JONG = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+
+    # 모음 형태 분류 (V: 세로형, H: 가로형, M: 복합형)
+    V_MOEUM = [0, 1, 2, 3, 4, 5, 6, 7, 20]  # ㅏ, ㅐ, ㅑ, ㅓ, ㅣ 등
+    H_MOEUM = [8, 12, 13, 17, 18]           # ㅗ, ㅛ, ㅜ, ㅠ, ㅡ
+    M_MOEUM = [9, 10, 11, 14, 15, 16, 19]   # ㅘ, ㅝ, ㅢ 등
+
+    # 0~1 사이로 정규화된 자모 기본 획 (디자인 딕셔너리)
+    # *여기에 없는 겹자음/겹모음은 필요시 추가하시면 됩니다.*
+    JAMO_STROKES = {
+        'ㄱ': [[(0.1, 0.1), (0.9, 0.1), (0.9, 0.9)]],
+        'ㄴ': [[(0.1, 0.1), (0.1, 0.9), (0.9, 0.9)]],
+        'ㄷ': [[(0.1, 0.1), (0.9, 0.1)], [(0.1, 0.1), (0.1, 0.9), (0.9, 0.9)]],
+        'ㄹ': [[(0.1, 0.1), (0.9, 0.1), (0.9, 0.5), (0.1, 0.5), (0.1, 0.9), (0.9, 0.9)]],
+        'ㅁ': [[(0.1, 0.1), (0.1, 0.9)], [(0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9)]],
+        'ㅂ': [[(0.2, 0.1), (0.2, 0.9)], [(0.8, 0.1), (0.8, 0.9)], [(0.2, 0.5), (0.8, 0.5)], [(0.2, 0.9), (0.8, 0.9)]],
+        'ㅅ': [[(0.5, 0.1), (0.1, 0.9)], [(0.5, 0.5), (0.9, 0.9)]],
+        'ㅇ': [[(0.5, 0.1), (0.2, 0.3), (0.2, 0.7), (0.5, 0.9), (0.8, 0.7), (0.8, 0.3), (0.5, 0.1)]], # 팔각형 근사
+        'ㅈ': [[(0.1, 0.1), (0.9, 0.1)], [(0.5, 0.1), (0.1, 0.9)], [(0.5, 0.5), (0.9, 0.9)]],
+        'ㅊ': [[(0.4, 0.0), (0.6, 0.0)], [(0.1, 0.2), (0.9, 0.2)], [(0.5, 0.2), (0.1, 0.9)], [(0.5, 0.5), (0.9, 0.9)]],
+        'ㅋ': [[(0.1, 0.1), (0.9, 0.1), (0.9, 0.9)], [(0.1, 0.5), (0.9, 0.5)]],
+        'ㅌ': [[(0.1, 0.1), (0.9, 0.1)], [(0.1, 0.5), (0.9, 0.5)], [(0.1, 0.1), (0.1, 0.9), (0.9, 0.9)]],
+        'ㅍ': [[(0.1, 0.1), (0.9, 0.1)], [(0.3, 0.1), (0.3, 0.9)], [(0.7, 0.1), (0.7, 0.9)], [(0.1, 0.9), (0.9, 0.9)]],
+        'ㅎ': [[(0.4, 0.0), (0.6, 0.0)], [(0.2, 0.2), (0.8, 0.2)], [(0.5, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 0.5), (0.5, 0.3)]],
+        
+        'ㅏ': [[(0.3, 0.1), (0.3, 0.9)], [(0.3, 0.5), (0.8, 0.5)]],
+        'ㅑ': [[(0.3, 0.1), (0.3, 0.9)], [(0.3, 0.4), (0.8, 0.4)], [(0.3, 0.6), (0.8, 0.6)]],
+        'ㅓ': [[(0.8, 0.1), (0.8, 0.9)], [(0.3, 0.5), (0.8, 0.5)]],
+        'ㅕ': [[(0.8, 0.1), (0.8, 0.9)], [(0.3, 0.4), (0.8, 0.4)], [(0.3, 0.6), (0.8, 0.6)]],
+        'ㅗ': [[(0.1, 0.7), (0.9, 0.7)], [(0.5, 0.2), (0.5, 0.7)]],
+        'ㅛ': [[(0.1, 0.7), (0.9, 0.7)], [(0.3, 0.2), (0.3, 0.7)], [(0.7, 0.2), (0.7, 0.7)]],
+        'ㅜ': [[(0.1, 0.3), (0.9, 0.3)], [(0.5, 0.3), (0.5, 0.8)]],
+        'ㅠ': [[(0.1, 0.3), (0.9, 0.3)], [(0.3, 0.3), (0.3, 0.8)], [(0.7, 0.3), (0.7, 0.8)]],
+        'ㅡ': [[(0.1, 0.5), (0.9, 0.5)]],
+        'ㅣ': [[(0.5, 0.1), (0.5, 0.9)]],
+    }
+
+    @staticmethod
+    def scale_strokes(char_jamo, bx, by, bw, bh):
+        """0~1 기준 좌표를 Bounding Box에 맞춰 크기/위치 변환"""
+        if char_jamo not in HangulEngine.JAMO_STROKES:
+            return []
+        
+        strokes = HangulEngine.JAMO_STROKES[char_jamo]
+        transformed = []
+        for stroke in strokes:
+            new_stroke = []
+            for (x, y) in stroke:
+                real_x = bx + (x * bw)
+                real_y = by + (y * bh)
+                new_stroke.append((real_x, real_y))
+            transformed.append(new_stroke)
+        return transformed
+
+    @classmethod
+    def get_char_strokes(cls, char, box_width=40.0, box_height=40.0):
+        """한 글자를 받아 해당 글자의 로봇 궤적(획 리스트)을 반환"""
+        # 띄어쓰기 처리
+        if char == " ": return []
+        
+        code = ord(char)
+        # 한글이 아닌 경우 빈 배열 반환 (필요시 영어/기호 추가 가능)
+        if code < 0xAC00 or code > 0xD7A3:
+            return []
+
+        # 한글 유니코드 분리
+        offset = code - 0xAC00
+        jong_idx = offset % 28
+        jung_idx = (offset // 28) % 21
+        cho_idx = (offset // 28) // 21
+
+        cho_char = cls.CHO[cho_idx]
+        jung_char = cls.JUNG[jung_idx]
+        jong_char = cls.JONG[jong_idx]
+
+        strokes = []
+        has_jong = jong_idx != 0
+
+        # 종성 유무에 따른 상/하단 높이 배분
+        top_h = box_height * 0.6 if has_jong else box_height
+        bot_h = box_height * 0.4 if has_jong else 0
+        bot_y = box_height * 0.6
+
+        # 모음 형태에 따른 초/중성 레이아웃 분할
+        if jung_idx in cls.V_MOEUM:   # 세로형 (가, 강)
+            strokes.extend(cls.scale_strokes(cho_char, 0, 0, box_width * 0.5, top_h))
+            strokes.extend(cls.scale_strokes(jung_char, box_width * 0.5, 0, box_width * 0.5, top_h))
+        elif jung_idx in cls.H_MOEUM: # 가로형 (고, 공)
+            strokes.extend(cls.scale_strokes(cho_char, 0, 0, box_width, top_h * 0.5))
+            strokes.extend(cls.scale_strokes(jung_char, 0, top_h * 0.5, box_width, top_h * 0.5))
+        else:                         # 복합형 (과, 광)
+            strokes.extend(cls.scale_strokes(cho_char, 0, 0, box_width * 0.5, top_h * 0.5))
+            strokes.extend(cls.scale_strokes(jung_char, 0, 0, box_width, top_h))
+
+        # 종성 렌더링
+        if has_jong:
+            strokes.extend(cls.scale_strokes(jong_char, 0, bot_y, box_width, bot_h))
+
+        return strokes
+
+
+# ==========================================
+# [2] 로봇 제어부 (기존 로직 유지)
+# ==========================================
 def initialize_robot():
     from DSR_ROBOT2 import set_tool, set_tcp
-
     set_tool(ROBOT_TOOL)
     set_tcp(ROBOT_TCP)
 
-
-# ============================================================
-# Gripper
-# ============================================================
 def grip_open():
     from DSR_ROBOT2 import set_digital_output, wait
-
     set_digital_output(1, 0)
     set_digital_output(2, 1)
     wait(1.0)
 
-
 def grip_close():
     from DSR_ROBOT2 import set_digital_output, wait
-
     set_digital_output(1, 1)
     set_digital_output(2, 0)
     wait(1.0)
 
-
-# ============================================================
-# Main
-# ============================================================
 def main(args=None):
-
     rclpy.init(args=args)
-
-    node = rclpy.create_node(
-        "gripper",
-        namespace=ROBOT_ID
-    )
-
+    node = rclpy.create_node("gripper", namespace=ROBOT_ID)
     DR_init.__dsr__node = node
 
     from DSR_ROBOT2 import wait, movej, movel, DR_TOOL
     from DR_common2 import posx, posj
 
-    # --------------------------------------------------------
-    # 시작 위치
-    # Q1 = 펜촉이 종이에 이미 닿아 있는 상태
-    # --------------------------------------------------------
-    Q1 = posj(
-        0.0,
-        0.0,
-        90.0,
-        0.0,
-        90.0,
-        0.0
-    )
-
-    # --------------------------------------------------------
-    # 펜 상태
-    #
-    # 프로그램 시작 시:
-    # 펜은 이미 종이에 닿아 있음
-    # 따라서 "down"으로 시작해야 함.
-    # --------------------------------------------------------
+    Q1 = posj(0.0, 0.0, 90.0, 0.0, 90.0, 0.0)
     pen_state = "down"
 
-    # --------------------------------------------------------
-    # Tool 좌표계 기준 상대 이동
-    # --------------------------------------------------------
-    def move_rel(dx, dy, dz=0.0):
+    def move_rel(dx, dy, dz=0.0, vel=VELOCITY, acc=ACC):
+        if abs(dx) < EPS and abs(dy) < EPS and abs(dz) < EPS: return
+        movel(posx(dx, dy, dz, 0.0, 0.0, 0.0), vel=vel, acc=acc, ref=DR_TOOL)
 
-        movel(
-            posx(
-                dx,
-                dy,
-                dz,
-                0.0,
-                0.0,
-                0.0
-            ),
-            vel=VELOCITY,
-            acc=ACC,
-            ref=DR_TOOL
-        )
-
-    # --------------------------------------------------------
-    # 펜 올리기
-    # --------------------------------------------------------
     def pen_up():
-
         nonlocal pen_state
-
         if pen_state == "down":
-
-            # 종이에서 10 mm 위로 이동
-            move_rel(
-                0.0,
-                0.0,
-                -10.0
-            )
-
+            move_rel(0.0, 0.0, -10.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
             pen_state = "up"
 
-    # --------------------------------------------------------
-    # 펜 내리기
-    # --------------------------------------------------------
     def pen_down():
-
         nonlocal pen_state
-
         if pen_state == "up":
-
-            # 종이 방향으로 10 mm 이동
-            move_rel(
-                0.0,
-                0.0,
-                10.0
-            )
-
+            move_rel(0.0, 0.0, 10.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
             pen_state = "down"
 
-    # ========================================================
-    # 한 글자 그리기
-    #
-    # 중요:
-    # 글자 시작 시 펜 상태를 강제로 내리지 않는다.
-    #
-    # 첫 글자인 "감"은 Q1에서 이미 펜이 종이에 닿아 있으므로
-    # 첫 획을 바로 시작한다.
-    #
-    # 이후 글자들은 글자 시작 전에 pen_up 상태에서
-    # 시작 위치로 이동한 뒤 pen_down 한다.
-    # ========================================================
-    def draw_letter(
-        strokes,
-        start_x,
-        start_y,
-        first_stroke_contact=False
-    ):
+    def draw_letter(strokes, offset_x=0.0, offset_y=0.0, advance=True):
+        cur_x, cur_y = 0.0, 0.0
+        first_stroke = True
 
-        nonlocal pen_state
-
-        cur_x = 0.0
-        cur_y = 0.0
-
-        # ----------------------------------------------------
-        # 첫 번째 글자가 아니면
-        # 펜을 들고 글자의 시작 위치로 이동
-        # ----------------------------------------------------
-        if not first_stroke_contact:
-
-            pen_up()
-
-            move_rel(
-                start_x - cur_x,
-                start_y - cur_y
-            )
-
-            cur_x = start_x
-            cur_y = start_y
-
-            # 새 글자의 첫 획을 위해 펜을 내림
-            pen_down()
-
-        else:
-
-            # 첫 글자는 Q1에서 이미 종이에 닿아 있음.
-            #
-            # start_x/start_y가 (0,0)이므로
-            # 별도의 Z 이동을 하지 않는다.
-            cur_x = start_x
-            cur_y = start_y
-
-        # ----------------------------------------------------
-        # 획 그리기
-        # ----------------------------------------------------
-        for stroke_index, stroke in enumerate(strokes):
-
-            # 첫 획이 아니라면
-            # 이전 획이 끝난 상태에서 펜을 들고
-            # 다음 획 시작점으로 이동
-            if stroke_index > 0:
-
+        for stroke in strokes:
+            start_x, start_y = stroke[0]
+            if first_stroke and pen_state == "down":
+                move_rel(start_x - cur_x, start_y - cur_y)
+            else:
                 pen_up()
-
-                stroke_start_x = stroke[0][0]
-                stroke_start_y = stroke[0][1]
-
-                move_rel(
-                    stroke_start_x - cur_x,
-                    stroke_start_y - cur_y
-                )
-
-                cur_x = stroke_start_x
-                cur_y = stroke_start_y
-
-                # 다음 획 시작
+                move_rel(start_x - cur_x, start_y - cur_y)
                 pen_down()
 
-            # ------------------------------------------------
-            # 실제 획 이동
-            # ------------------------------------------------
-            for x, y in stroke:
+            cur_x, cur_y = start_x, start_y
+            first_stroke = False
 
-                dx = x - cur_x
-                dy = y - cur_y
+            for x, y in stroke[1:]:
+                move_rel(x - cur_x, y - cur_y)
+                cur_x, cur_y = x, y
 
-                move_rel(
-                    dx,
-                    dy
-                )
-
-                cur_x = x
-                cur_y = y
-
-        # ----------------------------------------------------
-        # 글자 하나가 끝났으면 펜을 들어 올린다.
-        #
-        # 다음 글자로 이동할 때 종이를 긁지 않도록 함.
-        # ----------------------------------------------------
         pen_up()
+        if advance:
+            move_rel(offset_x - cur_x, offset_y - cur_y)
 
-        return cur_x, cur_y
-
-
-    # ========================================================
-    # "감사합니다" 획 데이터
-    # ========================================================
-
-    gam = [
-        [(0, 0), (15, 0), (15, 15)],
-        [(25, 0), (25, 20)],
-        [(25, 10), (30, 10)],
-        [(5, 25), (20, 25), (20, 40), (5, 40), (5, 25)]
-    ]
-
-    sa = [
-        [(15, 0), (5, 20)],
-        [(15, 0), (25, 20)],
-        [(35, 0), (35, 20)],
-        [(35, 10), (40, 10)]
-    ]
-
-    hab = [
-        [(15, 0), (15, 5)],
-        [(5, 5), (25, 5)],
-        [(10, 8), (20, 8), (20, 18), (10, 18), (10, 8)],
-        [(30, 0), (30, 20)],
-        [(30, 10), (35, 10)],
-        [(5, 22), (5, 40)],
-        [(25, 22), (25, 40)],
-        [(5, 30), (25, 30)],
-        [(5, 40), (25, 40)]
-    ]
-
-    ni = [
-        [(5, 0), (5, 20), (25, 20)],
-        [(35, 0), (35, 25)]
-    ]
-
-    da = [
-        [(20, 0), (5, 0), (5, 20), (20, 20)],
-        [(30, 0), (30, 20)],
-        [(30, 10), (35, 10)]
-    ]
-
-
-    # ========================================================
-    # 글자 위치
-    #
-    # "감사합니다"를 위/아래가 아니라
-    #
-    # 감 → 사 → 합 → 니 → 다
-    #
-    # 왼쪽에서 오른쪽으로 배치
-    # ========================================================
-
-    LETTER_GAP_X = 50.0
-
-    GAM_X = 0.0
-    SA_X = GAM_X + LETTER_GAP_X
-    HAB_X = SA_X + LETTER_GAP_X
-    NI_X = HAB_X + LETTER_GAP_X
-    DA_X = NI_X + LETTER_GAP_X
-
-    LETTER_Y = 0.0
-
-
-    # ========================================================
-    # 실행
-    # ========================================================
     try:
-
         initialize_robot()
-
         grip_open()
-
-        node.get_logger().info(
-            f"Moving to joint position: {Q1}"
-        )
-
-        movej(
-            Q1,
-            vel=VELOCITY,
-            acc=ACC
-        )
+        node.get_logger().info(f"Moving to joint position: {Q1}")
+        movej(Q1, vel=VELOCITY, acc=ACC)
 
         print("펜을 쥐어주세요 (5초 대기)")
         wait(5.0)
-
         grip_close()
 
-        # ----------------------------------------------------
-        # 중요
-        #
-        # Q1에서 이미 펜촉이 종이에 닿아 있다고 가정.
-        #
-        # 따라서 pen_state = "down"
-        #
-        # 절대로 시작하면서 pen_down()을 호출하지 않는다.
-        # ----------------------------------------------------
         pen_state = "down"
 
-        print("글쓰기 시작: 감사합니다")
+        # ==========================================
+        # [3] 사용부: 원하는 문장을 입력하세요
+        # ==========================================
+        TEXT_TO_WRITE = "안녕하세요 로봇입니다"
+        LETTER_SIZE = 40.0   # 글자 한 칸의 크기 (mm)
+        LETTER_SPACE = 50.0  # 다음 글자로 넘어가는 간격 (여백 포함)
+        
+        print(f"글쓰기 시작: {TEXT_TO_WRITE}")
 
-        # ----------------------------------------------------
-        # 1. 감
-        #
-        # Q1이 바로 "감"의 첫 획 시작점이므로
-        # 펜을 내리지 않고 바로 시작.
-        # ----------------------------------------------------
-        draw_letter(
-            gam,
-            GAM_X,
-            LETTER_Y,
-            first_stroke_contact=True
-        )
-
-        # ----------------------------------------------------
-        # 2. 사
-        #
-        # 감이 끝나면 펜이 올라간 상태.
-        # 사의 시작 위치로 이동 후 펜을 내림.
-        # ----------------------------------------------------
-        draw_letter(
-            sa,
-            SA_X,
-            LETTER_Y,
-            first_stroke_contact=False
-        )
-
-        # ----------------------------------------------------
-        # 3. 합
-        # ----------------------------------------------------
-        draw_letter(
-            hab,
-            HAB_X,
-            LETTER_Y,
-            first_stroke_contact=False
-        )
-
-        # ----------------------------------------------------
-        # 4. 니
-        # ----------------------------------------------------
-        draw_letter(
-            ni,
-            NI_X,
-            LETTER_Y,
-            first_stroke_contact=False
-        )
-
-        # ----------------------------------------------------
-        # 5. 다
-        # ----------------------------------------------------
-        draw_letter(
-            da,
-            DA_X,
-            LETTER_Y,
-            first_stroke_contact=False
-        )
+        engine = HangulEngine()
+        
+        for i, char in enumerate(TEXT_TO_WRITE):
+            # 1. 띄어쓰기 처리 (글자를 그리지 않고 오프셋만 이동)
+            if char == " ":
+                move_rel(LETTER_SPACE, 0.0)
+                continue
+                
+            # 2. 엔진을 통해 해당 글자의 획을 동적으로 생성
+            strokes = engine.get_char_strokes(char, box_width=LETTER_SIZE, box_height=LETTER_SIZE)
+            
+            is_last = (i == len(TEXT_TO_WRITE) - 1)
+            
+            # 3. 추출된 획으로 로봇을 움직여 그리기
+            draw_letter(strokes, offset_x=LETTER_SPACE, offset_y=0.0, advance=not is_last)
 
         print("작업 완료")
 
-
     except KeyboardInterrupt:
-
-        print(
-            "\nNode interrupted by user. "
-            "Shutting down..."
-        )
-
-
+        print("\nNode interrupted by user. Shutting down...")
     except Exception as e:
-
-        print(
-            f"An unexpected error occurred: {e}"
-        )
-
-
+        import traceback
+        traceback.print_exc()
+        print(f"An unexpected error occurred: {e}")
     finally:
-
-        # ----------------------------------------------------
-        # 마지막에는 펜을 반드시 올린다.
-        # ----------------------------------------------------
-        if pen_state == "down":
-
-            pen_up()
-
-        # Q1 복귀
-        movej(
-            Q1,
-            vel=VELOCITY,
-            acc=ACC
-        )
-
+        pen_up()
+        movej(Q1, vel=VELOCITY, acc=ACC)
         grip_open()
-
         rclpy.shutdown()
 
-
-# ============================================================
-# Entry point
-# ============================================================
 if __name__ == "__main__":
     main()

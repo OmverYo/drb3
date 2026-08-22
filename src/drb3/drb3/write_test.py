@@ -8,13 +8,13 @@ ROBOT_TOOL = "Tool Weight"
 ROBOT_TCP = "GripperDA"
 
 # 평상시 이동/그리기 속도 및 가속도
-VELOCITY = 50
-ACC = 50
+VELOCITY = 200
+ACC = 200
 
 # 펜을 종이에 대거나 뗄 때(Z축) 사용할 속도/가속도
 # 접촉 충격을 줄이기 위해 평상시보다 느리게 설정
-PEN_Z_VELOCITY = 20
-PEN_Z_ACC = 20
+PEN_Z_VELOCITY = 200
+PEN_Z_ACC = 200
 
 # 상대 이동량이 이 값보다 작으면 이동 명령 자체를 보내지 않음 (0거리 이동 방지)
 EPS = 1e-3
