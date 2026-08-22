@@ -64,4 +64,4 @@ ros2 run my_project main_control.py
 ```
 
 
-ads
+https://app.notion.com/p/9-B-3-1-3bc8a6d7140b8061bc33e2d9067a58d5?source=copy_link
