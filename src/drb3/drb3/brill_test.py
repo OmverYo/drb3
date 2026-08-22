@@ -106,13 +106,13 @@ def main(args=None):
             set_ref_coord(DR_TOOL)
 
             # 3. Z축 강성 낮추기 (순응 제어) - [Kx, Ky, Kz, Krx, Kry, Krz]
-            stx = [3000.0, 3000.0, 10.0, 200.0, 200.0, 200.0]
+            stx = [3000.0, 3000.0, 2000.0, 200.0, 200.0, 200.0]
             task_compliance_ctrl(stx, time=0.0)
 
             # 4. Z축 방향으로 force 만큼 누르기 (방향 세팅에 따라 -5.0일 수 있음)
             fd = [0.0, 0.0, force, 0.0, 0.0, 0.0]
             fctrl_dir = [0, 0, 1, 0, 0, 0]
-            set_desired_force(fd, dir=fctrl_dir, time = 0, mod = DR_FC_MOD_REL)
+            set_desired_force(fd, dir=fctrl_dir, time = 0.5, mod = 0)
 
             # 5. 점자가 찍히도록 유지
             wait(hold_time)
@@ -158,7 +158,7 @@ def main(args=None):
                 move_tool(dx, dy, 0.0)
 
                 # 힘 제어 함수를 호출하여 점 찍기
-                punch_dot(force= 150 , hold_time = 3)
+                punch_dot(force= 200 , hold_time = 3)
 
                 char_cur_x = target_x
                 char_cur_y = target_y
