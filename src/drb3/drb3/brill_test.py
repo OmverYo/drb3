@@ -12,12 +12,12 @@ ROBOT_TOOL = "Tool Weight"
 ROBOT_TCP = "GripperDA"
 
 # 평상시 이동 속도 및 가속도
-VELOCITY = 50
-ACC = 50
+VELOCITY = 100
+ACC = 100
 
 # 펜/핀 승강 속도 및 가속도
-PEN_Z_VELOCITY = 5
-PEN_Z_ACC = 5
+PEN_Z_VELOCITY = 20
+PEN_Z_ACC = 20
 
 # 상대 이동량 0거리 이동 방지
 EPS = 1e-3
@@ -67,8 +67,9 @@ def main(args=None):
     DR_init.__dsr__node = node
 
     from DSR_ROBOT2 import (wait, movej, movel, DR_TOOL, DR_BASE,
-                            set_ref_coord, task_compliance_ctrl, set_desired_force, DR_FC_MOD_REL,
-                            release_force, release_compliance_ctrl, check_force_condition, DR_AXIS_Z, DR_QSTOP)
+                        set_ref_coord, task_compliance_ctrl, set_desired_force, DR_FC_MOD_REL,
+                        release_force, release_compliance_ctrl, check_force_condition, DR_AXIS_Z, DR_QSTOP,
+                        get_current_posx)
     from DR_common2 import posx, posj
 
     # 시작 기준점 (원하시는 점자 시작 위치로 변경하세요)
@@ -98,6 +99,8 @@ def main(args=None):
     # 📌 점자 타격용 힘/순응 제어 함수 (테스트 시 이 값들을 조절하세요)
     # ==============================================================
     def punch_dot(force, hold_time):
+
+        safe_pos = get_current_posx(ref=DR_BASE)[0]
         try:
             # 1. 빠른 접근 (위치 제어)
             # 종이에서 너무 멀리서 힘 제어를 시작하면 닿기 전에 타임아웃이 발생합니다.
@@ -127,16 +130,17 @@ def main(args=None):
                 print("성공: 점자 타격 완료")
                 # wait(hold_time)
                 # 다시 안전한 높이로 들어올림 (내려갔던 거리 17.0 만큼 원상복구)
-                move_tool(0.0, 0.0, -34.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
+                release_force(time=0.2)
+                release_compliance_ctrl()
+                set_ref_coord(DR_BASE)
+                movel(safe_pos, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC, ref=DR_BASE)
             else:
                 print("실패: 허공에서 타임아웃 됨 (시작 높이가 너무 높거나 힘 설정 오류)")
                 
 
         finally:
             print("4. 힘 제어 해제 및 상승")
-            release_force(time=0.2)
-            release_compliance_ctrl()
-            set_ref_coord(DR_BASE)
+            
             
             # 다시 안전한 높이로 들어올림 (내려갔던 거리 17.0 만큼 원상복구)
             
