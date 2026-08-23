@@ -121,7 +121,7 @@ def main(args=None):
             # 3. 힘 조건 확인 (timeout 3초 필수!)
             # 설정한 힘의 80%에 도달했는지 최대 3초간 기다립니다.
             # target_force = force * 0.1
-            fcon = check_force_condition(DR_AXIS_Z, min=2.5, ref=DR_TOOL)
+            fcon = check_force_condition(DR_AXIS_Z, min=2.75, ref=DR_TOOL)
 
             if fcon == 0:
                 print("성공: 점자 타격 완료")
@@ -139,8 +139,7 @@ def main(args=None):
             set_ref_coord(DR_BASE)
             
             # 다시 안전한 높이로 들어올림 (내려갔던 거리 17.0 만큼 원상복구)
-            move_tool(0.0, 0.0, -34.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
-
+            
     # ==============================================================
     # 점자 1글자 그리기 로직
     # ==============================================================
