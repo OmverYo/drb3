@@ -1,0 +1,11 @@
+docker pull postgres:16
+
+docker volume create robotdata
+
+docker run -d --name robotdb \
+-e POSTGRES_DB=translation_db \
+-e POSTGRES_USER=postgres \
+-e POSTGRES_PASSWORD=postgres \
+-v robotdata:/var/lib/postgresql/data \
+-p 5432:5432 \
+postgres:16
