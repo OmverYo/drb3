@@ -13,7 +13,7 @@
 | 🦾 **사용 장비**  | Doosan Robotics **M0609** (GripperDA 그리퍼, 점필/펜 교체 사용)                                           |
 | 💻 **개발 환경**  | Ubuntu 24.04 LTS · ROS2 Jazzy · Python 3.12.3                                                   |
 | 🛠️ **기술 스택** | ROS2 Action · Compliance Control · Force Control · KorToBraille                                 |
-| 📅 **기간**     | 2026.08.16 ~ 2026.08.22                                                                         |
+| 📅 **기간**     | 2026.08.16 ~ 2026.08.28                                                                         |
 
 ---
 
@@ -25,7 +25,9 @@
 
 ## 🏗️ 시스템 아키텍처
 
-(팀원 검토후 이미지 추가예정)
+<p align="center">
+  <img src="./DOT.ON_flowchart-LJS.png" alt="시스템 설계도 이미지" width="400">
+</p>
 
 > PC(변환 로직)와 Doosan M0609 매니퓰레이터 간의 **ROS2 Action 통신 구조**입니다.
 > `BrailleActionClient`가 `print_braille_action` 서버에 Goal을 전송하고, 로봇 제어 노드가 이를 받아 실행합니다.
@@ -94,7 +96,7 @@ ros2 run drb3 brai    # 점자 타각 (Action 기반)
 
 | 이름  | 연락처                       |
 | --- | ------------------------- |
-| 이동준 | `[GitHub 핸들 또는 팀 대표 연락처]` |
+| 이동준 | `omver5669@gmail.com` |
 | 이정섭 | `[GitHub 핸들 또는 팀 대표 연락처]` |
 | 박세준 | `[GitHub 핸들 또는 팀 대표 연락처]` |
 | 백승주 | `[GitHub 핸들 또는 팀 대표 연락처]` |
@@ -107,7 +109,7 @@ ros2 run drb3 brai    # 점자 타각 (Action 기반)
 
 | 주차      | 기간                            | 구분      | 강의실        |
 | ------- | ----------------------------- | ------- | ---------- |
-| `[N주차]` | 2026.08.16(일) ~ 2026.08.22(토) | `[과정명]` | `[강의실 정보]` |
+| `[1~2주차]` | 2026.08.16(일) ~ 2026.08.22(토) | `[협동1]` | `[구로디지털단지 대륭포스트 8차]` |
 
 | 차시 | 구분              | 세부사항                             | 평가 | 팀구성   |
 | -- | --------------- | -------------------------------- | -- | ----- |
@@ -124,4 +126,3 @@ ros2 run drb3 brai    # 점자 타각 (Action 기반)
 * 🔗 https://v2-manual.scroll.site/ko/v2-programming-manual/2.12.1/publish
 * 🔗 github.com/Bridge-NOONGIL/KorToBraille_Python
 * 🔗 robotlab.doosanrobotics.com
-
