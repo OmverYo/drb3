@@ -1,0 +1,85 @@
+def grasp():
+    set_digital_output(1, ON)
+    set_digital_output(2, OFF)
+    wait(1)
+
+def release():
+    set_digital_output(1, OFF)
+    set_digital_output(2, ON)
+    wait(1)
+
+Q1 = posj(0,0,90,0,90,0)
+release()
+movej(Q1)
+
+movel(Global_p1) #위
+down_z =  85
+pos_down = posx(0, 0, down_z, 0, 0, 0)
+movel(pos_down, ref=DR_TOOL)
+grasp()
+movel(Global_p1)
+
+movel(Global_p4) #옮긴 위
+movel(pos_down, ref=DR_TOOL)
+release()
+#### 1 cycle
+
+movel(Global_p4)
+movel(Global_p2)
+movel(pos_down, ref=DR_TOOL)
+grasp()
+movel(Global_p2)
+
+movel(Global_p5)
+movel(pos_down, ref=DR_TOOL)
+release()
+### 2 cycle
+
+movel(Global_p5)
+movel(Global_p3)
+movel(pos_down, ref=DR_TOOL)
+grasp()
+movel(Global_p3)
+
+movel(Global_p6)
+movel(pos_down, ref=DR_TOOL)
+release()
+### 3 cycle
+
+movel(Global_p6)
+movel(Global_c1)
+movel(pos_down, ref=DR_TOOL)
+grasp()
+movel(Global_c1)
+
+#순응-힘 제어
+stx = [500, 500, 500, 200, 200, 200]
+time = 0
+task_compliance_ctrl(stx, time)
+
+fd = [0, 0, -15, 0, 0, 0]
+fctrl_dir= [0, 0, 1, 0, 0, 0]
+set_desired_force(fd, dir=fctrl_dir) 
+
+movel(Global_c2)
+amp = [0, 0, 0, 0, 0, 10]
+fcon1 = check_force_condition(DR_AXIS_Z, min=5, ref=DR_TOOL) 
+pcon1 = check_position_condition(DR_AXIS_Z, max=70, ref=DR_BASE)
+pos_uptemp = posx(0, 0, -10, 0, 0, 0)
+
+move_spiral(rev=5, rmax=3, lmax=0, ref=DR_TOOL)
+
+while True:
+
+    if pcon1 == True:
+        stop(DR_QSTOP)
+        break
+
+# movel(pos_down, ref=DR_TOOL)
+release()
+
+release_force(time=0)
+release_compliance_ctrl()
+movel(Global_c2)
+movej(Q1)
+### final cycle

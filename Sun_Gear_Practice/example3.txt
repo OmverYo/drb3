@@ -1,0 +1,8 @@
+Q1 = posj(0,0,90,0,90,0)
+movej(Q1)
+
+if gLoopCountRev < 4:
+    tp_popup("정상 작동")
+
+elif gLoopCountRev == 4:
+    tp_popup("작동 완료")

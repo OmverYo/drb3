@@ -1,0 +1,13 @@
+Q1 = posj(0,0,90,0,90,0)
+movej(Q1)
+sub_program_run(grasp)
+sub_program_run(release)
+
+set_tool_digital_output(1, ON)
+set_tool_digital_output(2, OFF)
+
+
+106.76
+72.4
+
+z값 34

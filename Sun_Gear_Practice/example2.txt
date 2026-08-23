@@ -1,0 +1,5 @@
+Q1 = posj(0,0,90,0,90,0)
+amovej(Q1, vel=10, acc=20) 
+
+set_digital_output(1, ON) #1번 접점 ON
+set_digital_output(2, OFF) #2번 접점 OFF

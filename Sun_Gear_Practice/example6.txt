@@ -1,0 +1,19 @@
+def grasp():
+    set_digital_output(1, ON)
+    set_digital_output(2, OFF)
+    wait(0.5)
+
+def release():
+    set_digital_output(1, OFF)
+    set_digital_output(2, ON)
+    wait(0.5)
+
+Q1 = posj(0,0,90,0,90,0)
+movej(Q1)
+
+movel(Global_p_c1)
+release()
+
+# temp, _ = get_current_posx()
+# target_temp = list(temp)
+# target_temp[2] = target_temp[2] - global_z
