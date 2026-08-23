@@ -1,4 +1,6 @@
 from setuptools import find_packages, setup
+import os
+from glob import glob
 
 package_name = 'drb3'
 
@@ -10,6 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -27,7 +30,10 @@ setup(
             'test = drb3.gripper_test:main',
             'force = drb3.force_test:main',
             'write = drb3.write_test:main',
-            'brai = drb3.brill_test:main'
+            'brai = drb3.brill_test:main',
+            'master = drb3.master_node:main',
+            'writed = drb3.write_node:main',
+            'braille = drb3.braille_node:main'
 
         ],
     },
