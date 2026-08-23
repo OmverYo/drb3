@@ -97,7 +97,7 @@ def main(args=None):
     # ==============================================================
     # 📌 점자 타격용 힘/순응 제어 함수 (테스트 시 이 값들을 조절하세요)
     # ==============================================================
-    def punch_dot(force=15.0, hold_time=0.5):
+    def punch_dot(force, hold_time):
         try:
             # 1. 빠른 접근 (위치 제어)
             # 종이에서 너무 멀리서 힘 제어를 시작하면 닿기 전에 타임아웃이 발생합니다.
@@ -123,13 +123,14 @@ def main(args=None):
             # target_force = force * 0.1
             fcon = check_force_condition(DR_AXIS_Z, min=2.5, ref=DR_TOOL)
 
-            if fcon == -1:
+            if fcon == 0:
                 print("성공: 점자 타격 완료")
-                if hold_time > 0:
-                    from DSR_ROBOT2 import wait
-                    wait(hold_time)
+                # wait(hold_time)
+                # 다시 안전한 높이로 들어올림 (내려갔던 거리 17.0 만큼 원상복구)
+                move_tool(0.0, 0.0, -34.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
             else:
                 print("실패: 허공에서 타임아웃 됨 (시작 높이가 너무 높거나 힘 설정 오류)")
+                
 
         finally:
             print("4. 힘 제어 해제 및 상승")
@@ -172,7 +173,7 @@ def main(args=None):
                 move_tool(dx, dy, 0.0)
 
                 # 힘 제어 함수를 호출하여 점 찍기
-                punch_dot(force= 200 , hold_time = 3)
+                punch_dot(force= 15 , hold_time = 0.5)
 
                 char_cur_x = target_x
                 char_cur_y = target_y
