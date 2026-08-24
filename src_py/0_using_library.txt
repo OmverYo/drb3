@@ -14,15 +14,3 @@ KorToBraille
 
 psycopg2-binary
 # postgresql DB 관리 및 제어 라이브러리
-
-openCV
-# 파이썬을 통한 이미지 처리 및 작업 라이브러리
-
-numpy
-# 각종 수학적 연산 작업 라이브러리
-
-pyinstaller
-# 파이썬 스크립트를 실행파일로 변환하는 라이브러리
-
-pyyaml jinja2 typeguard
-# pyinstaller 설치에 필요한 의존성 패키지

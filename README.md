@@ -72,10 +72,8 @@ ros2 launch dsr_bringup2 dsr_bringup2_rviz.launch.py mode:=real host:=192.168.1.
 **Step 2 — 기능 실행**
 
 ```bash
-ros2 run drb3 test    # 그리퍼 open/close 테스트
-ros2 run drb3 force   # 힘제어 기반 드로잉 테스트
-ros2 run drb3 write   # 한글 캘리그라피 작성
-ros2 run drb3 brai    # 점자 타각 (Action 기반)
+ros2 run drb3 master # GUI와 연결하여 글자를 받고 점자로 번역하는 노드
+ros2 run drb3 control # master node로 부터 글자를 받고 실제 로봇을 움직이는 노드
 ```
 
 ---
@@ -86,9 +84,13 @@ ros2 run drb3 brai    # 점자 타각 (Action 기반)
 * `rclpy`, `std_msgs`
 * `dsr_common2`, `dsr_msgs`
 * `custom_interfaces` (`PrintBraille` action 정의)
-* `KorToBraille` (한글 → 점자 변환)
 
-> ⚠️ **주의:** `package.xml`에 `custom_interfaces`, `KorToBraille` 의존성이 선언되어 있지 않습니다. 빌드 전 반드시 추가해 주세요.
+Python Requirements는 0_using_library.txt를 이용하여 pip install을 합니다.
+* `python3-venv` (Python 가상환경 설치)
+* `KorToBraille` (한글 → 점자 변환)
+* `psycopg2-binary` (파이썬 코드로 PostSQL DB 제어)
+
+> ⚠️ **주의:** package.xml에 custom_interfaces, python3-venv, KorToBraille, psycopg2-binary의존성이 선언되어 있지 않습니다. 빌드 전 반드시 추가해 주세요.
 
 ---
 
@@ -97,9 +99,9 @@ ros2 run drb3 brai    # 점자 타각 (Action 기반)
 | 이름  | 연락처                       |
 | --- | ------------------------- |
 | 이동준 | `omver5669@gmail.com` |
-| 이정섭 | `[GitHub 핸들 또는 팀 대표 연락처]` |
-| 박세준 | `[GitHub 핸들 또는 팀 대표 연락처]` |
-| 백승주 | `[GitHub 핸들 또는 팀 대표 연락처]` |
+| 이정섭 | `jungsub27@gmail.com` |
+| 박세준 | `sejun000220@gmail.com` |
+| 백승주 | `raybaeksj@gmail.com` |
 
 ---
 
