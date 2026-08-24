@@ -283,7 +283,71 @@ class WriteTask:
 
 
 # ==========================================
-# [3] 점자 타각 작업 클래스
+# [3] 종이 뒤집기 작업 클래스 
+# ==========================================
+class FlipTask:
+    def __init__(self, movej_vel=150.0, movej_acc=150.0, movel_vel=100.0, movel_acc=100.0, slow_vel=50.0, slow_acc=50.0):
+        self.MOVEJ_VEL = movej_vel; self.MOVEJ_ACC = movej_acc
+        self.MOVEL_VEL = movel_vel; self.MOVEL_ACC = movel_acc
+        self.SLOW_VEL = slow_vel; self.SLOW_ACC = slow_acc
+
+    def execute(self, logger):
+        from DSR_ROBOT2 import movej, movel, set_digital_output, wait
+        from DR_common2 import posx, posj
+        
+        success = False
+        try:
+            Q1 = posj([0.0, 0.0, 90.0, 0.0, 90.0, 0.0])
+            
+            # [진입 및 빠져나오는 'ㄷ'자 경로 좌표]
+            p1 = posx([422.25, 230.0,   200.0,  164.4, 179.89, 164.24])
+            p2 = posx([422.25, 230.0,   99.1,   91.0, -91.0,   -0.1])
+            p3 = posx([422.25, 145.53,  99.15,  91.1, -91.0,   -0.1])
+            
+            # [들고 뒤집고 내리는 위치 좌표]
+            pos_lift = posx([422.25, 145.53, 300.0, 91.1, -91.0, -0.1])
+            pos_rot  = posx([422.25, 145.53, 300.0, 91.1, -91.0, 180.0])
+            pos_down = posx([422.25, 145.53,  99.15, 91.1, -91.0, 180.0])
+
+            # 시작 시 열려있도록 보장
+            set_digital_output(1, 0)
+            set_digital_output(2, 1)
+
+            logger.info("-> 'ㄷ'자 궤적으로 종이 잡는 위치로 접근")
+            movel(p1, vel=self.MOVEL_VEL, acc=self.MOVEL_ACC)
+            movel(p2, vel=self.MOVEL_VEL, acc=self.MOVEL_ACC)
+            movel(p3, vel=self.SLOW_VEL, acc=self.SLOW_ACC)
+            
+            logger.info("-> 종이 잡기")
+            set_digital_output(1, 1); set_digital_output(2, 0)
+            wait(1.0)
+
+            logger.info("-> 종이 들고 180도 회전")
+            movel(pos_lift, vel=self.MOVEL_VEL, acc=self.MOVEL_ACC)
+            movel(pos_rot, vel=self.MOVEL_VEL, acc=self.MOVEL_ACC)
+            wait(0.5)
+
+            logger.info("-> 뒤집은 상태로 내려놓기")
+            movel(pos_down, vel=self.SLOW_VEL, acc=self.SLOW_ACC)
+            set_digital_output(1, 0); set_digital_output(2, 1)
+            wait(1.0)
+            
+            logger.info("-> 'ㄷ'자 궤적으로 빠져나와 홈 복귀")
+            movel(p2, vel=self.MOVEL_VEL, acc=self.MOVEL_ACC)
+            movel(p1, vel=self.MOVEL_VEL, acc=self.MOVEL_ACC)
+            movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
+
+            logger.info("종이 뒤집기 완료!")
+            success = True
+            
+        except Exception as e:
+            logger.error(f"종이 뒤집기 중 에러: {e}")
+            
+        return success
+
+
+# ==========================================
+# [4] 점자 타각 작업 클래스
 # ==========================================
 class BrailleTask:
     def __init__(self, movej_vel=200.0, movej_acc=200.0, move_vel=150.0, move_acc=150.0, z_vel=200.0, z_acc=200.0, punch_force=15.0, char_offset=10.0):
@@ -368,14 +432,15 @@ class BrailleTask:
 
 
 # ==========================================
-# [4] 통신 담당 메인 노드 
+# [5] 통신 담당 메인 노드 
 # ==========================================
 class RobotControlNode(Node):
-    def __init__(self, writer_obj, braille_obj):
+    def __init__(self, writer_obj, braille_obj, flipper_obj):
         super().__init__('robot_control_node', namespace=ROBOT_ID)
         
         self.writer = writer_obj
         self.braille_printer = braille_obj
+        self.flipper = flipper_obj
         
         self.sub_write = self.create_subscription(String, '/write_cmd', self.write_cmd_cb, 10)
         self.sub_braille = self.create_subscription(Int32MultiArray, '/braille_cmd', self.braille_cmd_cb, 10)
@@ -393,57 +458,69 @@ class RobotControlNode(Node):
         self.task_queue.append(('braille', list(msg.data)))
 
     def process_queue(self):
-        """큐에 담긴 작업을 하나씩 꺼내어 클래스의 execute를 실행"""
+        """큐에 담긴 작업을 하나씩 꺼내어 실행"""
         if self.task_queue:
             task_type, data = self.task_queue.pop(0)
             
             if task_type == 'write':
+                # 1. 글쓰기 먼저 실행
                 is_success = self.writer.execute(data, self.get_logger())
+                
+                # 2. 글쓰기가 성공했다면, "종이 뒤집기"를 통신 없이 내부적으로 바로 실행!
+                if is_success:
+                    self.get_logger().info("글쓰기 완료! 이어서 자동으로 종이 뒤집기를 시작합니다.")
+                    is_success = self.flipper.execute(self.get_logger())
+                
+                # 3. 글쓰기 + 종이 뒤집기의 최종 결과를 MasterNode에게 보고
                 res = Bool()
                 res.data = is_success
                 self.pub_write_done.publish(res)
                 
             elif task_type == 'braille':
+                # 4. MasterNode가 점자 명령을 쏘면 실행
                 is_success = self.braille_printer.execute(data, self.get_logger())
                 res = Bool()
                 res.data = is_success
                 self.pub_braille_done.publish(res)
 
-
 # ==========================================
-# [5] 메인 실행 함수
+# [6] 메인 실행 함수
 # ==========================================
 def main(args=None):
     rclpy.init(args=args)
 
-    # 1. 시스템 레벨 DR_init 매핑
     DR_init.__dsr__id = ROBOT_ID
     DR_init.__dsr__model = ROBOT_MODEL
 
-    # 2. 클래스 인스턴스 생성 및 속도/가속도 파라미터 세팅 (여기서 마음껏 수정하세요!)
+    # 객체 생성 (속도/가속도 파라미터 세팅)
     my_writer = WriteTask(
-        movej_vel=200.0, movej_acc=200.0,  # 초기 공중 이동
-        draw_vel=200.0,   draw_acc=200.0,    # 그리기 속도
-        z_vel=200.0,     z_acc=200.0,      # 펜 업/다운 속도
+        movej_vel=200.0, movej_acc=200.0,
+        draw_vel=200.0,  draw_acc=200.0,
+        z_vel=200.0,     z_acc=200.0,
         letter_size=20.0, letter_space=10.0
     )
     
+    my_flipper = FlipTask(
+        movej_vel=50.0, movej_acc=50.0, 
+        movel_vel=50.0, movel_acc=50.0,
+        slow_vel=50.0,   slow_acc=50.0
+    )
+    
     my_braille = BrailleTask(
-        movej_vel=200.0, movej_acc=200.0,  # 초기 공중 이동
-        move_vel=100.0,  move_acc=100.0,   # 점자 간 이동
-        z_vel=20.0,     z_acc=20.0,      # 찍기 전후 상하 이동
+        movej_vel=200.0, movej_acc=200.0,
+        move_vel=100.0,  move_acc=100.0,
+        z_vel=20.0,      z_acc=20.0,
         punch_force=15.0, char_offset=10.0
     )
 
     # 3. 노드 생성 및 주입
-    node = RobotControlNode(my_writer, my_braille)
+    node = RobotControlNode(my_writer, my_braille, my_flipper)
     DR_init.__dsr__node = node
 
-    # 4. 딱 한 번만 수행하는 하드웨어 초기화!
+    # 4. 초기화!
     initialize_robot()
-    node.get_logger().info("로봇 통합 제어 노드 가동 완료")
+    node.get_logger().info(" 로봇 통합 제어 노드 가동 완료")
 
-    # 5. 실행 루프
     try:
         while rclpy.ok():
             node.process_queue()

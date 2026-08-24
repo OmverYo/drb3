@@ -76,8 +76,6 @@ def main(args=None):
         node.get_logger().info("1. 초기 대기 위치(Q1)로 이동")
         movej(Q1, vel=VELJ, acc=ACCJ)
 
-        print("종이를 제자리에 놔주세요. (5초 대기)")
-        wait(5.0)
 
         # ========================================
         # [1단계] 'ㄷ'자 궤적으로 진입 (movel 연속 사용)
