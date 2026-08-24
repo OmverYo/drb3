@@ -268,7 +268,7 @@ class WriteTask:
                         
                 pen_up()
                 if i != len(text) - 1: 
-                    move_rel(self.LETTER_SPACE + self.LETTER_SIZE - cur_x, -cur_y, v=self.Z_VEL, a=self.Z_ACC)
+                    move_rel(self.LETTER_SPACE - cur_x, -cur_y, v=self.Z_VEL, a=self.Z_ACC)
 
             success = True
             

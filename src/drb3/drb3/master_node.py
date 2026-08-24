@@ -4,6 +4,7 @@ from std_msgs.msg import String, Int32MultiArray, Bool
 from KorToBraille.KorToBraille import KorToBraille
 import threading
 import time
+import psycopg2
 
 class MasterNode(Node):
     def __init__(self):
