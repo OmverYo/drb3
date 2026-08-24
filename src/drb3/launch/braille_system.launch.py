@@ -4,7 +4,7 @@
 로봇 공정 통합 Launch 파일
 - 마스터 노드를 가장 먼저 실행한 후, 제어 노드들을 지연 실행
 """
-import os
+
 from launch import LaunchDescription
 from launch_ros.actions import Node
 from launch.actions import TimerAction
@@ -13,14 +13,14 @@ from launch.actions import TimerAction
 def generate_launch_description():
     """Launch 설명 생성"""
 
-    # 1. 마스터 노드 (가장 먼저 실행되어 통신망 총괄 대기)
+    '''# 1. 마스터 노드 (가장 먼저 실행되어 통신망 총괄 대기)
     master_node = Node(
         package='drb3',
         executable='master',
         name='master_node',
         output='screen',
         emulate_tty=True,
-    )
+    )'''
 
     # 2. 글쓰기 제어 노드 (마스터 시작 2초 후 실행)
     write_node = TimerAction(
@@ -53,7 +53,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        master_node,
+        #master_node,
         write_node,
         braille_node,
     ])

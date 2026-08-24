@@ -33,7 +33,8 @@ setup(
             'brai = drb3.brill_test:main',
             'master = drb3.master_node:main',
             'writed = drb3.write_node:main',
-            'braille = drb3.braille_node:main'
+            'braille = drb3.braille_node:main',
+            'control = drb3.robot_control:main'
 
         ],
     },

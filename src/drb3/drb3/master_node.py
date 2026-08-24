@@ -1,137 +1,174 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String, Bool
+from std_msgs.msg import String, Int32MultiArray, Bool
+from KorToBraille.KorToBraille import KorToBraille
 import threading
-import DR_init
+import time
 
-ROBOT_ID = "dsr01"
-ROBOT_MODEL = "m0609"
-ROBOT_TOOL = "Tool Weight"
-ROBOT_TCP = "GripperDA"
-
-VELOCITY, ACC = 200, 200
-PEN_Z_VELOCITY, PEN_Z_ACC = 200, 200
-EPS = 1e-3
-
-# (여기에 기존 HangulEngine 클래스를 그대로 복사해 넣으세요!)
-
-class WriteNode(Node):
+class MasterNode(Node):
     def __init__(self):
-        super().__init__('write_node', namespace=ROBOT_ID)
-        DR_init.__dsr__node = self
-        DR_init.__dsr__id = ROBOT_ID
-        DR_init.__dsr__model = ROBOT_MODEL
-
-        self.sub = self.create_subscription(String, '/write_cmd', self.cmd_callback, 10)
-        self.pub = self.create_publisher(Bool, '/write_done', 10)
+        super().__init__('master_node')
         
+        # 1. 퍼블리셔 (각 제어 노드에 명령 하달)
+        self.write_cmd_pub = self.create_publisher(String, "/write_cmd", 10)
+        self.braille_cmd_pub = self.create_publisher(Int32MultiArray, "/braille_cmd", 10)
+        
+        # 2. 서브스크라이버 (제어 노드들로부터 완료 신호 수신)
+        self.create_subscription(Bool, "/write_done", self.write_done_callback, 10)
+        self.create_subscription(Bool, "/braille_done", self.braille_done_callback, 10)
+        
+        # 상태 관리 변수
         self.is_working = False
-        self.pen_state = "down"
+        self.current_text = ""
+        self.flat_bits = []
+        
+        self.waiting_for_write = False
+        self.waiting_for_braille = False
 
-        # 로봇 초기 셋업
-        from DSR_ROBOT2 import set_tool, set_tcp, movej, set_digital_output, wait
-        from DR_common2 import posj
-        
-        self.Q1 = posj(0.0, 25.0, 60.0, 0.0, 94.5, 0)
-        set_tool(ROBOT_TOOL)
-        set_tcp(ROBOT_TCP)
-        
-        # 그리퍼 초기화
-        set_digital_output(1, 0); set_digital_output(2, 1) # open
-        self.get_logger().info("초기 위치 이동 중...")
-        movej(self.Q1, vel=VELOCITY, acc=ACC)
-        
-        print("펜을 쥐어주세요 (5초 대기)")
-        wait(5.0)
-        set_digital_output(1, 1); set_digital_output(2, 0) # close
-        wait(1.0)
-        
-        self.get_logger().info("글쓰기 대기 모드 진입 완료.")
+        self.get_logger().info("마스터 노드(테스트 모드) 가동 완료")
 
-    def cmd_callback(self, msg):
-        if self.is_working:
-            self.get_logger().warn("현재 작업 중이라 새 명령을 무시합니다.")
-            return
-            
-        text = msg.data
-        self.get_logger().info(f"명령 수신: {text}")
-        
-        # 스레드에서 로봇 이동 시작 (spin 블로킹 방지)
-        threading.Thread(target=self.do_writing_task, args=(text,)).start()
+    # ==========================================
+    # 점자 변환 및 반전 알고리즘 (server.py 기준)
+    # ==========================================
+    def reverse_braille(self, text: str) -> str:
+        """점자 유니코드 좌우 반전 및 문자열 순서 반전"""
+        result = []
+        for char in text:
+            code = ord(char)
+            if 0x2800 <= code <= 0x283F:
+                value = code - 0x2800
+                p1 = (value >> 0) & 1
+                p2 = (value >> 1) & 1
+                p3 = (value >> 2) & 1
+                p4 = (value >> 3) & 1
+                p5 = (value >> 4) & 1
+                p6 = (value >> 5) & 1
 
-    def do_writing_task(self, text):
-        from DSR_ROBOT2 import movel, DR_TOOL
-        from DR_common2 import posx
-        
+                reversed_value = (
+                    (p4 << 0) | (p5 << 1) | (p6 << 2) |
+                    (p1 << 3) | (p2 << 4) | (p3 << 5)
+                )
+                result.append(chr(0x2800 + reversed_value))
+            else:
+                result.append(char)
+        return ''.join(result[::-1])
+
+    def braille_text_to_bits(self, text: str) -> list:
+        """점자 유니코드를 6비트 리스트로 변환"""
+        result = []
+        for char in text:
+            code = ord(char)
+            if 0x2800 <= code <= 0x283F:
+                value = code - 0x2800
+                bits = [
+                    (value >> 0) & 1, (value >> 1) & 1, (value >> 2) & 1,
+                    (value >> 3) & 1, (value >> 4) & 1, (value >> 5) & 1
+                ]
+                result.append(bits)
+            else:
+                result.append(char)
+        return result
+
+    # ==========================================
+    # 작업 시작 함수
+    # ==========================================
+    def process_user_input(self, user_text: str):
         self.is_working = True
-        success = False
-        
-        def move_rel(dx, dy, dz=0.0):
-            if abs(dx) < EPS and abs(dy) < EPS and abs(dz) < EPS: return
-            movel(posx(dx, dy, dz, 0.0, 0.0, 0.0), vel=VELOCITY, acc=ACC, ref=DR_TOOL)
+        self.current_text = user_text
+        self.get_logger().info(f"입력 텍스트 처리 시작: '{self.current_text}'")
 
-        def pen_up():
-            if self.pen_state == "down":
-                move_rel(0.0, 0.0, -10.0)
-                self.pen_state = "up"
+        # 1. 한글 -> 점자 변환 -> 반전 -> 비트 평탄화
+        b = KorToBraille()
+        text_b = b.korTranslate(self.current_text)
+        text_b_reverse = self.reverse_braille(text_b)
+        bit_b_2d = self.braille_text_to_bits(text_b_reverse)
 
-        def pen_down():
-            if self.pen_state == "up":
-                move_rel(0.0, 0.0, 10.0)
-                self.pen_state = "down"
+        # 맨 앞 EOL 빈 블록 제거
+        if bit_b_2d and bit_b_2d[0] == [0, 0, 0, 0, 0, 0]:
+            bit_b_2d.pop(0)
 
-        def draw_letter(strokes, offset_x=0.0, offset_y=0.0, advance=True):
-            cur_x, cur_y = 0.0, 0.0
-            first_stroke = True
-            for stroke in strokes:
-                start_x, start_y = stroke[0]
-                if first_stroke and self.pen_state == "down":
-                    move_rel(start_x - cur_x, start_y - cur_y)
-                else:
-                    pen_up()
-                    move_rel(start_x - cur_x, start_y - cur_y)
-                    pen_down()
-                cur_x, cur_y = start_x, start_y
-                first_stroke = False
-                for x, y in stroke[1:]:
-                    move_rel(x - cur_x, y - cur_y)
-                    cur_x, cur_y = x, y
-            pen_up()
-            if advance:
-                move_rel(offset_x - cur_x, offset_y - cur_y)
+        # 1차원 배열로 평탄화
+        self.flat_bits = [bit for block in bit_b_2d for bit in block]
+        self.get_logger().info(f"점자 비트 생성 완료 (총 {len(self.flat_bits)//6}글자)")
 
-        try:
-            self.pen_state = "down"
-            engine = HangulEngine() # 위에 선언된 엔진 인스턴스화
-            LETTER_SIZE, LETTER_SPACE = 20.0, 10.0
-            
-            for i, char in enumerate(text):
-                if char == " ":
-                    move_rel(LETTER_SPACE, 0.0)
-                    continue
-                strokes = engine.get_char_strokes(char, box_width=LETTER_SIZE, box_height=LETTER_SIZE)
-                is_last = (i == len(text) - 1)
-                draw_letter(strokes, offset_x=LETTER_SPACE, offset_y=0.0, advance=not is_last)
+        # 2. 글쓰기 노드로 명령 토픽 발행
+        msg = String()
+        msg.data = self.current_text
+        self.waiting_for_write = True
+        self.write_cmd_pub.publish(msg)
+        self.get_logger().info("[1단계] 글쓰기 명령 토픽(/write_cmd) 발행")
+
+    # ==========================================
+    # 콜백 함수들
+    # ==========================================
+    def write_done_callback(self, msg):
+        if self.waiting_for_write:
+            self.waiting_for_write = False
+            if msg.data:
+                self.get_logger().info("글쓰기 완료 수신 이어서 점자 타각 시작")
                 
-            success = True
-        except Exception as e:
-            self.get_logger().error(f"글쓰기 중 오류: {e}")
-        finally:
+                # 3. 점자 타각 노드로 명령 토픽 발행
+                braille_msg = Int32MultiArray()
+                braille_msg.data = self.flat_bits
+                self.waiting_for_braille = True
+                self.braille_cmd_pub.publish(braille_msg)
+                self.get_logger().info("[2단계] 점자 타각 명령 토픽(/braille_cmd) 발행")
+            else:
+                self.get_logger().error("글쓰기 실패. 공정을 중단합니다.")
+                self.is_working = False
+
+    def braille_done_callback(self, msg):
+        if self.waiting_for_braille:
+            self.waiting_for_braille = False
+            if msg.data:
+                self.get_logger().info("[최종 완료] 글쓰기 및 점자 타각 공정이 모두 성공적으로 끝났습니다!")
+            else:
+                self.get_logger().error("점자 타각 실패.")
+            
+            # 다음 입력을 받을 수 있도록 상태 초기화
             self.is_working = False
-            res_msg = Bool()
-            res_msg.data = success
-            self.pub.publish(res_msg)
+            print("\n" + "="*50)
+
+
+# ==========================================
+# 사용자 터미널 입력 스레드
+# ==========================================
+def terminal_input_thread(node: MasterNode):
+    time.sleep(1.0)
+    while rclpy.ok():
+        if not node.is_working:
+            try:
+                text = input("\n작성할 한글 문장을 입력하세요 (종료: q) : ").strip()
+                if text.lower() == 'q':
+                    print("테스트를 종료합니다.")
+                    rclpy.shutdown()
+                    break
+                if not text:
+                    continue
+                
+                node.process_user_input(text)
+            except (KeyboardInterrupt, EOFError):
+                break
+        else:
+            time.sleep(0.5)
+
 
 def main(args=None):
     rclpy.init(args=args)
-    node = WriteNode()
+    node = MasterNode()
+
+    # 터미널 input을 위한 백그라운드 스레드 가동
+    input_t = threading.Thread(target=terminal_input_thread, args=(node,), daemon=True)
+    input_t.start()
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
