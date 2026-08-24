@@ -86,13 +86,13 @@ def main(args=None):
     def pen_up():
         nonlocal pen_state
         if pen_state == "down":
-            move_tool(0.0, 0.0, -35.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
+            move_tool(0.0, 0.0, -31.5, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
             pen_state = "up"
 
     def pen_down():
         nonlocal pen_state
         if pen_state == "up":
-            move_tool(0.0, 0.0, 35.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
+            move_tool(0.0, 0.0, 31.5, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
             pen_state = "down"
 
     # ==============================================================
@@ -106,7 +106,7 @@ def main(args=None):
             # 종이에서 너무 멀리서 힘 제어를 시작하면 닿기 전에 타임아웃이 발생합니다.
             # 종이 닿기 직전까지 위치 제어로 빠르게 내려갑니다.
             # (만약 초기 높이가 너무 높다면 이 17.0 값을 상황에 맞게 조금씩 늘려보세요)
-            move_tool(0.0, 0.0, 34.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
+            move_tool(0.0, 0.0, 30.5, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
 
             print("1. 툴 좌표계 설정 및 순응 제어 켜기")
             set_ref_coord(DR_TOOL)
@@ -124,7 +124,7 @@ def main(args=None):
             # 3. 힘 조건 확인 (timeout 3초 필수!)
             # 설정한 힘의 80%에 도달했는지 최대 3초간 기다립니다.
             # target_force = force * 0.1
-            fcon = check_force_condition(DR_AXIS_Z, min=2.75, ref=DR_TOOL)
+            fcon = check_force_condition(DR_AXIS_Z, min=1, ref=DR_TOOL)
 
             if fcon == 0:
                 print("성공: 점자 타격 완료")
