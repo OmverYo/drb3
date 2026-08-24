@@ -7,7 +7,7 @@ import time
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
 ROBOT_TOOL = "Tool Weight"
-ROBOT_TCP = "GripperDA"
+ROBOT_TCP = "GripperDA_v1"
 
 DR_init.__dsr__id = ROBOT_ID
 DR_init.__dsr__model = ROBOT_MODEL
@@ -212,48 +212,33 @@ class WriteTask:
         
         success = False
         try:
-            def move_rel(dx, dy, dz=0.0, v=self.DRAW_VEL, a=self.DRAW_ACC):
-                if abs(dx) < self.EPS and abs(dy) < self.EPS and abs(dz) < self.EPS: return
-                movel(posx([dx, dy, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL)
-                        
-            def pen_up():
-                if self.pen_state == "down": 
-                    move_rel(0.0, 0.0, -10.0, v=self.Z_VEL, a=self.Z_ACC)
-                    self.pen_state = "up"
-                                
-            def pen_down():
-                if self.pen_state == "up": 
-                    move_rel(0.0, 0.0, 10.0, v=self.Z_VEL, a=self.Z_ACC)
-                    self.pen_state = "down"
-            
-            Q1 = posj([0.0, 25.0, 60.0, 0.0, 94.5, 0.0]) 
-            '''
-            W1 = posx([0, 0, 0, 0, 0, 0]) # 글쓰기 시작위치 조정 필요!!!!
-            P1 = posx([0, 0, 0, 0, 0, 0]) # 팬위치 위쪽
-            P_z = 0 # 팬잡으로 내려오기까지 필요한 거리
-
-            '''
+            Q1 = posj([0.0, 25.0, 60.0, 0.0, 94.5, 0.0])
             set_digital_output(1, 0); set_digital_output(2, 1) # 오픈
             
             logger.info("글쓰기 초기 위치로 이동 중...")
             movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
-            '''
-            movel(P1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
-            move_rel(0.0, 0.0, P_z, v=self.Z_VEL, a=self.Z_ACC)
-
-            '''
-            print("펜 집 기")
             
+            print("펜을 쥐어주세요 (5초 대기)")
+            wait(5.0)
             set_digital_output(1, 1); set_digital_output(2, 0) # 클로즈
             wait(1.0)
             
             self.pen_state = "down"
-            '''
-            move_rel(0.0, 0.0, -P_z, v=self.Z_VEL, a=self.Z_ACC)
-            movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
-
-            '''
             
+            def move_rel(dx, dy, dz=0.0, v=self.DRAW_VEL, a=self.DRAW_ACC):
+                if abs(dx) < self.EPS and abs(dy) < self.EPS and abs(dz) < self.EPS: return
+                movel(posx([dx, dy, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL)
+            
+            def pen_up():
+                if self.pen_state == "down": 
+                    move_rel(0.0, 0.0, -10.0, v=self.Z_VEL, a=self.Z_ACC)
+                    self.pen_state = "up"
+                    
+            def pen_down():
+                if self.pen_state == "up": 
+                    move_rel(0.0, 0.0, 10.0, v=self.Z_VEL, a=self.Z_ACC)
+                    self.pen_state = "down"
+
             logger.info("글쓰기 타각 시작!")
             engine = HangulEngine()
             
@@ -288,12 +273,6 @@ class WriteTask:
             success = True
             
             # 종료 후 뱉기
-            '''
-            movel(W1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
-            move_rel
-
-            '''
-
             movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
             set_digital_output(1, 0); set_digital_output(2, 1)
             
