@@ -264,7 +264,7 @@ def main(args=None):
         # ==========================================
         TEXT_TO_WRITE = "안녕 하세요"
         LETTER_SIZE = 20.0   # 글자 한 칸의 크기 (mm)
-        LETTER_SPACE = 10.0  # 다음 글자로 넘어가는 간격 (여백 포함)
+        LETTER_SPACE = 25.0  # 다음 글자로 넘어가는 간격 (여백 포함)
         
         print(f"글쓰기 시작: {TEXT_TO_WRITE}")
 

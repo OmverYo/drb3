@@ -29,12 +29,11 @@ setup(
         'console_scripts': [
             'test = drb3.gripper_test:main',
             'force = drb3.force_test:main',
-            'write = drb3.write_test:main',
+            'write = drb3.test:main',
             'brai = drb3.brill_test:main',
             'master = drb3.master_node:main',
             'writed = drb3.write_node:main',
             'braille = drb3.braille_node:main',
-            'control = drb3.robot_control:main',
             'flip = drb3.flip_test:main'
 
         ],
