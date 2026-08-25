@@ -3,6 +3,9 @@ from rclpy.node import Node
 from std_msgs.msg import String, Int32MultiArray, Bool
 import DR_init
 import time
+from drb3.device import Device
+from drb3.rg2 import RG
+import threading
 
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
@@ -205,66 +208,120 @@ class WriteTask:
         self.LETTER_SPACE = letter_space
         self.EPS = 1e-3
         self.pen_state = "down"
+        
+        # 안전 제어를 위한 플래그
+        self.is_running = False
+        self.pen_dropped = False
+
+        # 🌟 OnRobot RG2 그리퍼 초기화
+        # 주의: OnRobot Compute Box의 실제 IP로 변경해야 할 수 있습니다. (기본값: 192.168.1.1)
+        self.cb_ip = '192.168.1.1' 
+        self.dev = Device(Global_cbip=self.cb_ip)
+        self.gripper = RG(self.dev)
+        
+        # t_index는 보통 단일 그리퍼일 경우 0을 사용합니다.
+        self.t_index = 0
 
     def execute(self, text, logger):
-        from DSR_ROBOT2 import movej, movel, set_digital_output, wait, DR_TOOL, DR_MV_MOD_REL, get_current_posx, DR_BASE
+        from DSR_ROBOT2 import (movej, movel, wait, DR_TOOL, DR_MV_MOD_REL, 
+                                get_current_posx, DR_BASE, DR_QSTOP)
         from DR_common2 import posx, posj
         
         success = False
+        self.is_running = True
+        self.pen_dropped = False
+
+        # 통신 연결 확인
+        if not self.gripper.isConnected(self.t_index):
+            logger.error("RG2 그리퍼와 통신할 수 없습니다. IP 주소나 랜선 연결을 확인하세요.")
+            return False
+
+        # --- [모니터링 스레드: RG2 너비 및 그립 상태 감시] ---
+        def monitor_grip():
+            while self.is_running:
+                try:
+                    # 현재 너비(mm)와 파지 상태(True/False)를 가져옵니다.
+                    current_width = self.gripper.get_width(self.t_index)
+                    is_gripped = self.gripper.isGripped(self.t_index)
+                    
+                    # 💡 이쑤시개(3mm)와 붓펜(10mm) 모두 20.0mm 이하로 닫히면 놓친 것으로 판단
+                    # 또는 isGripped 센서가 False(놓침)로 변하면 즉시 정지
+                    if current_width < 15.0 or not is_gripped: 
+                        logger.error(f"🚨 [경고] 펜 놓침 감지! (현재 너비: {current_width:.1f}mm) 즉시 정지합니다.")
+                        self.pen_dropped = True
+                        print("펜 놓침 감지: 모션 강제 종료")
+                        break
+                except Exception as e:
+                    pass
+                time.sleep(0.1) # 0.1초마다 검사
+
         try:
             Q1 = posj([13.2, -5.7, 96.5, 0.0, 90.0, 13.4])
             
-            # 1. 붓펜 거치대 관련 좌표 정의 (rx=0, ry=180, rz=0 형태 유지)
+            # 1. 좌표 정의
             pos_pen_above = posx([347.0, -185.0, 250.0, 0.0, 180.0, 0.0])
             pos_pen_pick  = posx([347.0, -185.0, 150.0, 0.0, 180.0, 0.0])
             pos_pen_drop  = posx([347.0, -185.0, 160.0, 0.0, 180.0, 0.0])
-            
-            set_digital_output(1, 0); set_digital_output(2, 1) # 오픈
+
+            # 🌟 디지털 출력 대신 라이브러리로 그리퍼 열기 (100mm 너비로 열기, 힘 40N, 대기)
+            self.gripper.move(self.t_index, twidth=100.0, tforce=40.0, fwait=True)
             
             # 2. 붓펜 잡으러 가기
-            logger.info("붓펜 픽업 위치로 이동 중...")
+            logger.info("픽업 위치로 이동 중...")
             movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
             movel(pos_pen_pick, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
-            set_digital_output(1, 1); set_digital_output(2, 0) # 클로즈 (펜 잡기)
-            wait(1.0)
+            # 🌟 그리퍼로 펜 잡기 (목표 너비 0mm로 세팅하면 펜(3mm/10mm)을 만날 때까지 닫힙니다)
+            # fwait=True 로 설정하여 파지가 끝날 때까지 코드가 대기합니다.
+            self.gripper.grip(self.t_index, twidth=0.0, tforce=40.0, fwait=True)
             
             # 안전 높이로 복귀
             movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
 
+            # --- [모니터링 스레드 시작] ---
+            # 허공으로 올라온 시점부터 펜을 떨어뜨리는지 감시 시작
+            monitor_thread = threading.Thread(target=monitor_grip)
+            monitor_thread.daemon = True
+            monitor_thread.start()
+
             # 3. 글쓰기 시작 위치 계산 및 이동
+            # (calculate_start_positions 함수는 외부에 정의되어 있다고 가정)
             text_start, _ = calculate_start_positions(len(text), 0, self.LETTER_SIZE, self.LETTER_SPACE)
             target_x, target_y = text_start[0], text_start[1]
     
             pos_write_above = posx([target_x, target_y, 250.0, 0.0, 180.0, 0.0])
-            pos_write_start = posx([target_x, target_y, 209.0, 0.0, 180.0, 0.0]) # 글쓰는 높이 weight 조절 필요!!!
+            pos_write_start = posx([target_x, target_y, 209.0, 0.0, 180.0, 0.0])
             
-            logger.info(f"글쓰기 시작 위치로 이동 중 (X: {target_x:.2f}, Y: {target_y:.2f})")
+            logger.info(f"글쓰기 위치로 이동 중 (X: {target_x:.2f}, Y: {target_y:.2f})")
             movel(pos_write_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
             movel(pos_write_start, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
             self.pen_state = "down"
             
+            # 💡 [중요] 펜이 떨어졌으면(self.pen_dropped == True) 명령을 무시하도록 방어 코드 추가
             def move_rel(dx, dy, dz=0.0, v=self.DRAW_VEL, a=self.DRAW_ACC):
+                if self.pen_dropped: raise Exception("펜 놓침: 모션 강제 종료")
                 if abs(dx) < self.EPS and abs(dy) < self.EPS and abs(dz) < self.EPS: return
-                dx_rot = -dx
-                dy_rot = -dy
-                movel(posx([dx_rot, dy_rot, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL, mod=DR_MV_MOD_REL)
+                movel(posx([-dx, -dy, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL, mod=DR_MV_MOD_REL)
             
             def pen_up():
+                if self.pen_dropped: raise Exception("펜 놓침: 모션 강제 종료")
                 if self.pen_state == "down": 
                     move_rel(0.0, 0.0, -10.0, v=self.Z_VEL, a=self.Z_ACC)
                     self.pen_state = "up"
                     
             def pen_down():
+                if self.pen_dropped: raise Exception("펜 놓침: 모션 강제 종료")
                 if self.pen_state == "up": 
                     move_rel(0.0, 0.0, 10.0, v=self.Z_VEL, a=self.Z_ACC)
                     self.pen_state = "down"
 
             logger.info("글쓰기 타각 시작!")
-            engine = HangulEngine()
+            engine = HangulEngine() # 외부에 정의되어 있다고 가정
             
             for i, char in enumerate(text):
+                if self.pen_dropped: break # 강제 탈출
+
                 if char == " ":
                     move_rel(self.LETTER_SPACE, 0.0, v=self.Z_VEL, a=self.Z_ACC)
                     continue
@@ -292,29 +349,35 @@ class WriteTask:
                 if i != len(text) - 1: 
                     move_rel(self.LETTER_SPACE - cur_x, -cur_y, v=self.Z_VEL, a=self.Z_ACC)
 
-            # 4. 글쓰기 완료 후 붓펜 반납
-            logger.info("글쓰기 완료, 붓펜 반납 중...")
+            # 정상 종료 처리
+            self.is_running = False 
             
-            # 현재 위치에서 Z축만 안전 높이(250)로 수직 상승
-            curr_pos = get_current_posx(ref=DR_BASE)[0]
-            curr_pos[2] = 250.0
-            movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
-            
-            # 반납 위치로 이동 후 내려놓기
-            movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
-            movel(pos_pen_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
-            
-            set_digital_output(1, 0); set_digital_output(2, 1) # 오픈 (펜 놓기)
-            wait(1.0)
-            
-            # 안전 높이로 복귀 후 홈 이동
-            movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
-            movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
+            if not self.pen_dropped:
+                # 4. 글쓰기 완료 후 붓펜 반납
+                logger.info("글쓰기 완료, 붓펜 반납 중...")
+                
+                curr_pos = get_current_posx(ref=DR_BASE)[0]
+                curr_pos[2] = 250.0
+                movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                
+                movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+                movel(pos_pen_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                
+                # 🌟 다 쓰고 나서 그리퍼 열어서 놓기
+                self.gripper.move(self.t_index, twidth=100.0, tforce=40.0, fwait=True)
+                
+                movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+                movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
 
-            success = True
-            
+                success = True
+
         except Exception as e:
-            logger.error(f"글쓰기 중 에러: {e}")
+            if self.pen_dropped:
+                logger.error("동작 중 펜을 놓쳐서 작업을 안전하게 중단했습니다.")
+            else:
+                logger.error(f"글쓰기 중 에러: {e}")
+        finally:
+            self.is_running = False # 예외 발생 시에도 스레드 종료 보장
             
         return success
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import time
-from device import Device
+from drb3.device import Device
 import numpy as np
 
 '''
