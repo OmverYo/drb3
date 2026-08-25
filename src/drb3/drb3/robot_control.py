@@ -191,7 +191,7 @@ class HangulEngine:
         return strokes
 
 # ==========================================
-# [2] 글쓰기 작업 클래스
+# [2] 글쓰기 작업
 # ==========================================
 class WriteTask:
     def __init__(self, movej_vel=200.0, movej_acc=200.0, draw_vel=50.0, draw_acc=50.0, z_vel=100.0, z_acc=100.0, letter_size=20.0, letter_space=10.0):
@@ -207,7 +207,7 @@ class WriteTask:
         self.pen_state = "down"
 
     def execute(self, text, logger):
-        from DSR_ROBOT2 import movej, movel, set_digital_output, wait, DR_TOOL, DR_MV_MOD_REL
+        from DSR_ROBOT2 import movej, movel, set_digital_output, wait, DR_TOOL, DR_MV_MOD_REL, get_current_posx, DR_BASE
         from DR_common2 import posx, posj
         
         success = False
@@ -217,7 +217,24 @@ class WriteTask:
             
             logger.info("글쓰기 초기 위치로 이동 중...")
             movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
-            
+
+            text_start, _ = calculate_start_positions(len(text), 0, self.LETTER_SIZE, self.LETTER_SPACE)
+            target_x, target_y = text_start[0], text_start[1]
+    
+        # 2. 현재 위치 가져오기 (DR_BASE 기준)
+            current_pos = get_current_posx(ref=DR_BASE)
+            current_x = current_pos[0][0]
+            current_y = current_pos[0][1]
+    
+        # 3. 이동해야 할 변위(Delta) 계산
+            dx = target_x - current_x
+            dy = target_y - current_y
+    
+        # 4. 안전하게 현재 높이를 유지하며 상대 이동 (DR_BASE 기준, 상대 좌표 모드)
+            movel(posx([dx, dy, 0.0, 0.0, 0.0, 0.0]), vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE, mod=DR_MV_MOD_REL)
+    
+            logger.info(f"글쓰기 시작 위치로 상대 이동 완료 (dx: {dx:.2f}, dy: {dy:.2f})")
+
             print("펜을 쥐어주세요 (5초 대기)")
             wait(5.0)
             set_digital_output(1, 1); set_digital_output(2, 0) # 클로즈
@@ -291,7 +308,7 @@ class WriteTask:
 
 
 # ==========================================
-# [3] 종이 뒤집기 작업 클래스 
+# [3] 종이 뒤집기 작업
 # ==========================================
 class FlipTask:
     def __init__(self, movej_vel=150.0, movej_acc=150.0, movel_vel=100.0, movel_acc=100.0, slow_vel=50.0, slow_acc=50.0):
@@ -308,14 +325,14 @@ class FlipTask:
             Q1 = posj([0.0, 0.0, 90.0, 0.0, 90.0, 0.0])
             
             # [진입 및 빠져나오는 'ㄷ'자 경로 좌표]
-            p1 = posx([422.25, 230.0,   200.0,  164.4, 179.89, 164.24])
-            p2 = posx([422.25, 230.0,   99.1,   91.0, -91.0,   -0.1])
-            p3 = posx([422.25, 145.53,  99.15,  91.1, -91.0,   -0.1])
+            p1 = posx([422.25, 230.0,   200.0,  164.4, 180.0, 164.24])
+            p2 = posx([422.25, 230.0,   99.1,   90.0, -90.0,   -0.1])
+            p3 = posx([422.25, 145.53,  99.15,  90.0, -90.0,   -0.1])
             
             # [들고 뒤집고 내리는 위치 좌표]
-            pos_lift = posx([422.25, 145.53, 300.0, 91.1, -91.0, -0.1])
-            pos_rot  = posx([422.25, 145.53, 300.0, 91.1, -91.0, 180.0])
-            pos_down = posx([422.25, 145.53,  99.15, 91.1, -91.0, 180.0])
+            pos_lift = posx([422.25, 145.53, 300.0, 90.0, -90.0, -0.1])
+            pos_rot  = posx([422.25, 145.53, 300.0, 90.0, -90.0, 180.0])
+            pos_down = posx([422.25, 145.53,  99.15, 90.0, -90.0, 180.0])
 
             # 시작 시 열려있도록 보장
             set_digital_output(1, 0)
@@ -355,7 +372,7 @@ class FlipTask:
 
 
 # ==========================================
-# [4] 점자 타각 작업 클래스
+# [4] 점자 타각 작업
 # ==========================================
 class BrailleTask:
     def __init__(self, movej_vel=200.0, movej_acc=200.0, move_vel=150.0, move_acc=150.0, z_vel=200.0, z_acc=200.0, punch_force=15.0, char_offset=10.0):
@@ -383,7 +400,25 @@ class BrailleTask:
             
             logger.info("점자 초기 위치로 이동 중...")
             movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
+            num_chars = len(flat_bits) //   6
+
+            _, braille_start = calculate_start_positions(0, num_chars, braille_offset=self.CHAR_OFFSET)
+            target_x, target_y = braille_start[0], braille_start[1]
+    
+            # 2. 현재 위치 가져오기 (DR_BASE 기준)
+            current_pos = get_current_posx(ref=DR_BASE)
+            current_x = current_pos[0][0]
+            current_y = current_pos[0][1]
             
+            # 3. 이동해야 할 변위(Delta) 계산
+            dx = target_x - current_x
+            dy = target_y - current_y
+            
+            # 4. 상대 이동 수행
+            movel(posx([dx, dy, 0.0, 0.0, 0.0, 0.0]), vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_BASE, mod=DR_MV_MOD_REL)
+            
+            logger.info(f"점자 시작 위치로 상대 이동 완료 (dx: {dx:.2f}, dy: {dy:.2f})")
+                    
             print("점필을 쥐어주세요 (5초 대기)")
             wait(5.0)
             set_digital_output(1, 1); set_digital_output(2, 0)
@@ -394,6 +429,12 @@ class BrailleTask:
             movel(posx([0.0, 0.0, 20.0, 0.0, 0.0, 0.0]), vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
             logger.info("점자 타각 시작!")
 
+            def move_rel(dx, dy, v=self.MOVE_VEL, a=self.MOVE_ACC):
+                if abs(dx) < self.EPS and abs(dy) < self.EPS: return
+                dx_rot = -dx
+                dy_rot = -dy
+                movel(posx([dx_rot, dy_rot, 0.0, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL, mod=DR_MV_MOD_REL)
+
             def punch_dot():
                 safe_pos = get_current_posx(ref=DR_BASE)[0]
                 try:
@@ -402,14 +443,14 @@ class BrailleTask:
                     print("툴 좌표계 설정 및 순응 제어 켜기")
                     task_compliance_ctrl([3000.0, 3000.0, 1000.0, 200.0, 200.0, 200.0], time=0.2)
                     set_desired_force([0.0, 0.0, self.PUNCH_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], time=0.2, mod=0)
-                    check_force_condition(DR_AXIS_Z, min=1, ref=DR_TOOL)
+                    check_force_condition(DR_AXIS_Z, min = 0.95, ref=DR_TOOL)
                 finally:
                     release_force(time=0.2)
                     release_compliance_ctrl()
                     set_ref_coord(DR_BASE)
                     movel(safe_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
 
-            num_chars = len(flat_bits) // 6
+            
             for i in range(num_chars):
                 bits = flat_bits[i*6 : (i+1)*6]
                 char_cur_x, char_cur_y = 0.0, 0.0
@@ -418,13 +459,12 @@ class BrailleTask:
                     if val == 1:
                         target_x, target_y = (j // 3) * 5, (j % 3) * 5
                         dx, dy = target_x - char_cur_x, target_y - char_cur_y
-                        if abs(dx) > self.EPS or abs(dy) > self.EPS:
-                            movel(posx([dx, dy, 0.0, 0.0, 0.0, 0.0]), vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
+                        move_rel(dx, dy)
                         punch_dot()
                         char_cur_x, char_cur_y = target_x, target_y
                         
                 if i != num_chars - 1:
-                    movel(posx([self.CHAR_OFFSET - char_cur_x, -char_cur_y, 0.0, 0.0, 0.0, 0.0]), vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_TOOL)
+                    move_rel(self.CHAR_OFFSET - char_cur_x, -char_cur_y)
 
             success = True
             
@@ -491,8 +531,37 @@ class RobotControlNode(Node):
                 res.data = is_success
                 self.pub_braille_done.publish(res)
 
+
+
 # ==========================================
-# [6] 메인 실행 함수
+# [6] 중심 잡기 함수
+# ==========================================
+
+def calculate_start_positions(text_len, braille_len, letter_size=20.0, letter_space=25.0, braille_offset=10.0):
+    # 1. 종이 영역 중심점 및 기준 Y 좌표[cite: 2]
+    x_center = (281.0 + 566.0) / 2.0  # X 중심: 423.5[cite: 2]
+    y_max = 97.0                      # 상단 기준 Y 좌표[cite: 2]
+    
+    # 2. 글자 전체 너비 및 시작점 계산
+    # (글자수 - 1) * 띄어쓰기 간격 + 마지막 글자의 너비
+    text_width = (text_len - 1) * letter_space + letter_size if text_len > 0 else 0.0
+    text_start_x = x_center - (text_width / 2.0)
+    text_start_y = y_max  # 상단 여백 확보 가능
+    
+    # 3. 점자 전체 너비 및 시작점 계산
+    # 점자 1칸 너비는 5.0 (가로 최대 인덱스 기준)
+    braille_cell_width = 5.0
+    braille_width = (braille_len - 1) * braille_offset + braille_cell_width if braille_len > 0 else 0.0
+    braille_start_x = x_center - (braille_width / 2.0)
+    
+    # 4. 점자 시작 Y 좌표: 글자의 제일 낮은 Y 좌표(text_start_y - letter_size)에서 20mm 아래
+    lowest_text_y = text_start_y - letter_size
+    braille_start_y = lowest_text_y - 20.0
+    
+    return [text_start_x, text_start_y], [braille_start_x, braille_start_y]
+
+# ==========================================
+# [7] 메인 실행 함수
 # ==========================================
 def main(args=None):
     rclpy.init(args=args)

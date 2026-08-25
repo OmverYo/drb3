@@ -74,6 +74,7 @@ def main(args=None):
 
     # 시작 기준점 (원하시는 점자 시작 위치로 변경하세요)
     Q1 = posj(0.0, 25.0, 55.0, 0.0, 100.0, 0.0)
+    Q2 = posx(10, 5, 0, 0, 0 ,0)
 
     # --- 핀/툴 상태 관리 ---
     pen_state = "down"
@@ -124,7 +125,7 @@ def main(args=None):
             # 3. 힘 조건 확인 (timeout 3초 필수!)
             # 설정한 힘의 80%에 도달했는지 최대 3초간 기다립니다.
             # target_force = force * 0.1
-            fcon = check_force_condition(DR_AXIS_Z, min=1, ref=DR_TOOL)
+            fcon = check_force_condition(DR_AXIS_Z, min=0.95, ref=DR_TOOL)
 
             if fcon == 0:
                 print("성공: 점자 타격 완료")
@@ -242,7 +243,7 @@ def main(args=None):
         grip_open()
         node.get_logger().info(f"Moving to joint position: {Q1}")
         movej(Q1, vel=VELOCITY, acc=ACC)
-
+        movel(Q2, vel=VELOCITY, acc=ACC, ref =DR_TOOL)
         print("점필을 쥐어주세요 (5초 대기)")
         wait(5.0)
         grip_close()
