@@ -2,7 +2,6 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32MultiArray, Bool
 from KorToBraille.KorToBraille import KorToBraille
-import time
 import psycopg2
 
 # ==========================================
@@ -42,7 +41,7 @@ class MasterNode(Node):
         self.db_timer = self.create_timer(1.0, self.check_database)
 
         self.get_logger().info("=" * 60)
-        self.get_logger().info("🚀 마스터 노드 가동 완료: DB 작업 대기 중...")
+        self.get_logger().info("마스터 노드 가동 완료: DB 작업 대기 중...")
         self.get_logger().info("=" * 60)
 
     # ==========================================
@@ -111,7 +110,7 @@ class MasterNode(Node):
                 self.current_text = task[1]
                 
                 self.get_logger().info("=" * 60)
-                self.get_logger().info(f"🔔 [DB 작업 감지] ID: {self.current_exec_id}, 텍스트: '{self.current_text}'")
+                self.get_logger().info(f"[DB 작업 감지] ID: {self.current_exec_id}, 텍스트: '{self.current_text}'")
                 self.get_logger().info("=" * 60)
                 
                 # 1. 점자 번역 수행
@@ -126,20 +125,20 @@ class MasterNode(Node):
                 
                 # 1차원 배열로 평탄화
                 self.flat_bits = [bit for block in bit_b_2d for bit in block]
-                self.get_logger().info(f"🔹 점자 비트 생성 완료 (총 {len(self.flat_bits)//6}글자)")
+                self.get_logger().info(f"점자 비트 생성 완료 (총 {len(self.flat_bits)//6}글자)")
 
                 # 2. 글쓰기 제어 노드로 토픽 발행
                 msg = String()
                 msg.data = self.current_text
                 self.waiting_for_write = True
                 self.write_cmd_pub.publish(msg)
-                self.get_logger().info("✍️ [1단계] 글쓰기 명령 토픽(/write_cmd) 발행 완료")
+                self.get_logger().info("글쓰기 명령 토픽(/write_cmd) 발행 완료")
 
             cur.close()
             conn.close()
         except Exception as e:
             # DB 연결 실패 등의 에러 출력
-            self.get_logger().error(f"❌ DB 폴링 오류: {e}")
+            self.get_logger().error(f"DB 폴링 오류: {e}")
 
     # ==========================================
     # 제어 완료 콜백
@@ -148,26 +147,26 @@ class MasterNode(Node):
         if self.waiting_for_write:
             self.waiting_for_write = False
             if msg.data:
-                self.get_logger().info("✅ 글쓰기 완료 수신! 이어서 점자 타각 시작")
+                self.get_logger().info("글쓰기 완료 수신! 이어서 점자 타각 시작")
                 
                 # 3. 점자 타각 노드로 명령 토픽 발행
                 braille_msg = Int32MultiArray()
                 braille_msg.data = self.flat_bits
                 self.waiting_for_braille = True
                 self.braille_cmd_pub.publish(braille_msg)
-                self.get_logger().info("🔤 [2단계] 점자 타각 명령 토픽(/braille_cmd) 발행 완료")
+                self.get_logger().info("점자 타각 명령 토픽(/braille_cmd) 발행 완료")
             else:
-                self.get_logger().error("❌ 글쓰기 실패. 공정을 중단합니다.")
+                self.get_logger().error("글쓰기 실패. 공정을 중단합니다.")
                 self.finish_task(success=False)
 
     def braille_done_callback(self, msg):
         if self.waiting_for_braille:
             self.waiting_for_braille = False
             if msg.data:
-                self.get_logger().info("🎉 [최종 완료] 글쓰기 및 점자 타각 공정이 모두 성공적으로 끝났습니다!")
+                self.get_logger().info("글쓰기 및 점자 타각 공정이 모두 성공적으로 끝났습니다!")
                 self.finish_task(success=True)
             else:
-                self.get_logger().error("❌ 점자 타각 실패.")
+                self.get_logger().error("점자 타각 실패.")
                 self.finish_task(success=False)
 
     def finish_task(self, success):
@@ -187,16 +186,16 @@ class MasterNode(Node):
                 conn.commit()
                 cur.close()
                 conn.close()
-                self.get_logger().info(f"🔄 DB 상태 갱신 완료 (ID: {self.current_exec_id}, translate_result = TRUE)")
+                self.get_logger().info(f"DB 상태 갱신 완료 (ID: {self.current_exec_id}, translate_result = TRUE)")
             except Exception as e:
-                self.get_logger().error(f"❌ DB 갱신 오류: {e}")
+                self.get_logger().error(f"DB 갱신 오류: {e}")
         
         # 상태 초기화하여 다음 DB 작업 폴링 재개
         self.is_working = False
         self.current_exec_id = None
         
         self.get_logger().info("=" * 60)
-        self.get_logger().info("⏳ 다음 DB 작업을 대기합니다...")
+        self.get_logger().info("다음 DB 작업을 대기합니다...")
 
 
 def main(args=None):
@@ -206,7 +205,7 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        print("\n🛑 Ctrl+C 감지. 마스터 노드를 종료합니다.")
+        print("\nCtrl+C 감지. 마스터 노드를 종료합니다.")
     finally:
         node.destroy_node()
         if rclpy.ok():

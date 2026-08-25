@@ -456,21 +456,23 @@ class BrailleTask:
                     # print("툴 좌표계 설정 및 순응 제어 켜기")
                     task_compliance_ctrl([3000.0, 3000.0, 1000.0, 200.0, 200.0, 200.0], time=0.2)
                     set_desired_force([0.0, 0.0, self.PUNCH_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], time=0.2, mod=0)
-                    check_force_condition(DR_AXIS_Z, min = 0.95, ref=DR_TOOL)
+                    if (check_force_condition(DR_AXIS_Z, min=1, ref=DR_TOOL)) == 0:
+                        print("찍기 성공!")
+                        release_force(time=0.2) #[cite: 5]
+                        release_compliance_ctrl() #[cite: 5]
+                        set_ref_coord(DR_BASE) #[cite: 5]
+                        movel(safe_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                    else :
+                        print("찍기 실패")
                 finally:
-                    release_force(time=0.2)
-                    release_compliance_ctrl()
-                    set_ref_coord(DR_BASE)
-                    # 타각 후 원래의 242.5 높이로 복귀
-                    movel(safe_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
-
+                        print("다음 점자")
             for i in range(num_chars):
                 bits = flat_bits[i*6 : (i+1)*6]
                 char_cur_x, char_cur_y = 0.0, 0.0
                 
                 for j, val in enumerate(bits):
                     if val == 1:
-                        target_x_char, target_y_char = (j // 3) * 5, (j % 3) * 5
+                        target_x_char, target_y_char = (j // 3) * 2.5, (j % 3) * 2.5  # 점자간 간격 * 뒤에 값으로 (기준 : mm)
                         dx, dy = target_x_char - char_cur_x, target_y_char - char_cur_y
                         move_rel(dx, dy)
                         punch_dot()
@@ -577,7 +579,7 @@ def calculate_start_positions(text_len, braille_len, letter_size=20.0, letter_sp
     
     # 3. 점자 전체 너비 및 시작점 계산
     # 점자 1칸 너비는 5.0 (가로 최대 인덱스 기준)
-    braille_cell_width = 5.0
+    braille_cell_width = 2.5
     braille_width = (braille_len - 1) * braille_offset + braille_cell_width if braille_len > 0 else 0.0
     braille_start_x = x_center - (braille_width / 2.0)
     
@@ -613,8 +615,8 @@ def main(args=None):
     my_braille = BrailleTask(
         movej_vel=200.0, movej_acc=200.0,
         move_vel=100.0,  move_acc=100.0,
-        z_vel=20.0,      z_acc=20.0, # 건들지마!!!
-        punch_force=15.0, char_offset=10.0
+        z_vel=20.0,      z_acc=20.0, # 찍기 강도 영향있음 테스트 필요!!!!
+        punch_force=15.0, char_offset=5.5
     )
 
     # 3. 노드 생성 및 주입

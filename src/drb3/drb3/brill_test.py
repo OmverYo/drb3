@@ -1,284 +1,191 @@
 import rclpy
-import threading
+from rclpy.node import Node
 import DR_init
+import time
 
-# 생성하신 커스텀 서비스 임포트 (패키지명에 맞게 수정)
-# from custom_interfaces.srv import PrintBraille
-
-# 로봇 설정 상수
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
 ROBOT_TOOL = "Tool Weight"
-ROBOT_TCP = "GripperDA"
+ROBOT_TCP = "GripperDA_v1" #[cite: 5]
 
-# 평상시 이동 속도 및 가속도
-VELOCITY = 100
-ACC = 100
-
-# 펜/핀 승강 속도 및 가속도
-PEN_Z_VELOCITY = 20
-PEN_Z_ACC = 20
-
-# 상대 이동량 0거리 이동 방지
-EPS = 1e-3
-
-# 글자(점자 한 칸) 사이 간격: 첫 글자 시작점 (0,0) 기준 X축으로 10mm씩 이동
-NEXT_CHAR_OFFSET_X = 10.0
-NEXT_CHAR_OFFSET_Y = 0.0
-
-# 출력할 점자 데이터 (각 원소 = 점자 한 글자, 6비트: [1,4,2,5,3,6] 순서 아님 주의,
-# 기존 print_braille_character 로직 기준 col=i//3, row=i%3 순서를 그대로 따름)
-# 필요할 때 이 리스트만 교체하면 됨
-BRAILLE_DATA = [
-    [1, 0, 0, 1, 0, 0],
-    [0, 1, 0, 0, 1, 0],
-    [0, 0, 1, 0, 0, 1],
-]
-
-# DR_init 설정
 DR_init.__dsr__id = ROBOT_ID
 DR_init.__dsr__model = ROBOT_MODEL
 
+# 테스트용 점자 데이터 (1: 타각, 0: 통과)
+# 각 배열이 점자 한 글자를 의미합니다. 원하시는 대로 수정하여 테스트하세요!
+BRAILLE_DATA = [
+    [1, 0, 0, 1, 0, 0], # 첫 번째 점자[cite: 6]
+    [0, 1, 0, 0, 1, 0], # 두 번째 점자[cite: 6]
+    [0, 0, 1, 0, 0, 1], # 세 번째 점자[cite: 6]
+    [1, 0, 0, 0, 1, 0],
+    [0, 0 ,0 ,0 ,0 ,0],
+    [1, 0, 0, 0, 0, 1],
+    [0, 1, 0 ,1 ,0 ,0],
+    [0, 1, 0, 0, 0, 1]
+]
 
 def initialize_robot():
-    """로봇의 Tool과 TCP를 설정"""
-    from DSR_ROBOT2 import set_tool, set_tcp
-    set_tool(ROBOT_TOOL)
-    set_tcp(ROBOT_TCP)
+    """로봇의 Tool과 TCP 및 초기 모드를 설정"""
+    from DSR_ROBOT2 import set_tool, set_tcp, release_force, release_compliance_ctrl, set_robot_mode, ROBOT_MODE_AUTONOMOUS #[cite: 5]
+    try:
+        set_robot_mode(ROBOT_MODE_AUTONOMOUS) #[cite: 5]
+        release_force(time=0.0) #[cite: 5]
+        release_compliance_ctrl() #[cite: 5]
+    except Exception:
+        pass
+    
+    set_tool(ROBOT_TOOL) #[cite: 5]
+    set_tcp(ROBOT_TCP) #[cite: 5]
+    print("로봇 Tool/TCP 초기화 완료") #[cite: 5]
 
-
-def grip_open():
-    from DSR_ROBOT2 import set_digital_output, wait
-    set_digital_output(1, 0)
-    set_digital_output(2, 1)
-    wait(1.0)
-
-
-def grip_close():
-    from DSR_ROBOT2 import set_digital_output, wait
-    set_digital_output(1, 1)
-    set_digital_output(2, 0)
-    wait(1.0)
-
+def calculate_braille_start_position(braille_len, braille_offset=5.5):
+    """종이의 중앙 좌표를 계산하여 점자 시작 위치를 반환합니다."""
+    x_center = (281.0 + 566.0) / 2.0  # 종이 X 중심: 423.5[cite: 5]
+    y_max = 97.0                      # 상단 기준 Y 좌표[cite: 5]
+    
+    braille_cell_width = 2.5 #[cite: 5]
+    braille_width = (braille_len - 1) * braille_offset + braille_cell_width if braille_len > 0 else 0.0 #[cite: 5]
+    braille_start_x = x_center - (braille_width / 2.0) #[cite: 5]
+    
+    # 글자가 없으므로 기본 상단 여백을 주고, 거기서 점자 위치(아래로 40mm)를 계산합니다.
+    lowest_text_y = y_max - 20.0 #[cite: 5]
+    braille_start_y = lowest_text_y - 20.0 #[cite: 5]
+    
+    return braille_start_x, braille_start_y
 
 def main(args=None):
     rclpy.init(args=args)
-    node = rclpy.create_node("braille_printer", namespace=ROBOT_ID)
+    node = rclpy.create_node("braille_test_node", namespace=ROBOT_ID)
     DR_init.__dsr__node = node
 
-    from DSR_ROBOT2 import (wait, movej, movel, DR_TOOL, DR_BASE,
-                        set_ref_coord, task_compliance_ctrl, set_desired_force, DR_FC_MOD_REL,
-                        release_force, release_compliance_ctrl, check_force_condition, DR_AXIS_Z, DR_QSTOP,
-                        get_current_posx)
-    from DR_common2 import posx, posj
+    from DSR_ROBOT2 import (wait, movej, movel, DR_TOOL, DR_BASE, set_digital_output,
+                            set_ref_coord, task_compliance_ctrl, set_desired_force, DR_FC_MOD_REL,
+                            release_force, release_compliance_ctrl, check_force_condition, DR_AXIS_Z,
+                            get_current_posx, DR_MV_MOD_REL) #[cite: 5, 6]
+    from DR_common2 import posx, posj #[cite: 6]
 
-    # 시작 기준점 (원하시는 점자 시작 위치로 변경하세요)
-    Q1 = posj(0.0, 25.0, 55.0, 0.0, 100.0, 0.0)
-    Q2 = posx(10, 5, 0, 0, 0 ,0)
-
-    # --- 핀/툴 상태 관리 ---
-    pen_state = "down"
-
-    def move_tool(dx, dy, dz=0.0, vel=VELOCITY, acc=ACC):
-        if abs(dx) < EPS and abs(dy) < EPS and abs(dz) < EPS:
-            return
-        movel(posx(dx, dy, dz, 0.0, 0.0, 0.0), vel=vel, acc=acc, ref=DR_TOOL)
-
-    def pen_up():
-        nonlocal pen_state
-        if pen_state == "down":
-            move_tool(0.0, 0.0, -31.5, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
-            pen_state = "up"
-
-    def pen_down():
-        nonlocal pen_state
-        if pen_state == "up":
-            move_tool(0.0, 0.0, 31.5, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
-            pen_state = "down"
-
-    # ==============================================================
-    # 📌 점자 타격용 힘/순응 제어 함수 (테스트 시 이 값들을 조절하세요)
-    # ==============================================================
-    def punch_dot(force, hold_time):
-
-        safe_pos = get_current_posx(ref=DR_BASE)[0]
-        try:
-            # 1. 빠른 접근 (위치 제어)
-            # 종이에서 너무 멀리서 힘 제어를 시작하면 닿기 전에 타임아웃이 발생합니다.
-            # 종이 닿기 직전까지 위치 제어로 빠르게 내려갑니다.
-            # (만약 초기 높이가 너무 높다면 이 17.0 값을 상황에 맞게 조금씩 늘려보세요)
-            move_tool(0.0, 0.0, 30.5, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
-
-            print("1. 툴 좌표계 설정 및 순응 제어 켜기")
-            set_ref_coord(DR_TOOL)
-            
-            # 2. Z축 강성을 낮춤 (충격 흡수)
-            stx = [3000.0, 3000.0, 1000.0, 200.0, 200.0, 200.0]
-            task_compliance_ctrl(stx, time=0.2)
-
-            print(f"2. Z축 방향으로 누르기 (목표 힘: {force}N)")
-            fd = [0.0, 0.0, force, 0.0, 0.0, 0.0]
-            fctrl_dir = [0, 0, 1, 0, 0, 0]
-            set_desired_force(fd, dir=fctrl_dir, time=0.2, mod=0)
-
-            print("3. 목표 힘에 도달할 때까지 대기")
-            # 3. 힘 조건 확인 (timeout 3초 필수!)
-            # 설정한 힘의 80%에 도달했는지 최대 3초간 기다립니다.
-            # target_force = force * 0.1
-            fcon = check_force_condition(DR_AXIS_Z, min=0.95, ref=DR_TOOL)
-
-            if fcon == 0:
-                print("성공: 점자 타격 완료")
-                # wait(hold_time)
-                # 다시 안전한 높이로 들어올림 (내려갔던 거리 17.0 만큼 원상복구)
-                release_force(time=0.2)
-                release_compliance_ctrl()
-                set_ref_coord(DR_BASE)
-                movel(safe_pos, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC, ref=DR_BASE)
-            else:
-                print("실패: 허공에서 타임아웃 됨 (시작 높이가 너무 높거나 힘 설정 오류)")
-                
-
-        finally:
-            print("4. 힘 제어 해제 및 상승")
-            
-            
-            # 다시 안전한 높이로 들어올림 (내려갔던 거리 17.0 만큼 원상복구)
-            
-    # ==============================================================
-    # 점자 1글자 그리기 로직
-    # ==============================================================
-    def print_braille_character(bits, offset_x=0.0, offset_y=0.0, advance=True):
-        """
-        bits: 길이 6의 1차원 배열 (예: [1, 0, 0, 1, 1, 0])
-        offset_x, offset_y: 다음 글자로 넘어가기 위한 이동량 (이 글자의 로컬 원점 기준)
-        advance: True면 글자를 다 찍은 뒤 offset만큼 이동. 마지막 글자는 False로 호출해
-                 불필요한 이동을 없앤다.
-        """
-        GAP_X = 5  # 한 글자 내의 점 간격 (가로)
-        GAP_Y = 5  # 한 글자 내의 점 간격 (세로)
-
-        char_cur_x = 0.0
-        char_cur_y = 0.0
-
-        for i, val in enumerate(bits):
-            if val == 1:
-                # 1~3번 점은 0열, 4~6번 점은 1열
-                col = i // 3
-                row = i % 3
-
-                target_x = col * GAP_X
-                target_y = row * GAP_Y
-
-                dx = target_x - char_cur_x
-                dy = target_y - char_cur_y
-
-                # 다음 타격 위치로 이동 (펜은 이미 위로 들려 있음)
-                move_tool(dx, dy, 0.0)
-
-                # 힘 제어 함수를 호출하여 점 찍기
-                punch_dot(force= 15 , hold_time = 0.5)
-
-                char_cur_x = target_x
-                char_cur_y = target_y
-
-        # 글자 출력이 끝나면 다음 글자의 시작점으로 툴 이동
-        if advance:
-            move_tool(offset_x - char_cur_x, offset_y - char_cur_y, 0.0)
-        # advance=False (마지막 글자)인 경우 불필요한 이동 없이 종료한다.
-
-    is_printing = False
-
-    # ==============================================================
-    # 서비스 통신 콜백 (필요 시 재사용 — 현재는 비활성 상태, 아래 직접 실행 로직 사용)
-    # ==============================================================
-    '''def braille_service_callback(request, response):
-        nonlocal is_printing
-        if is_printing:
-            response.success = False
-            response.message = "현재 작업 중입니다. 새 명령을 무시합니다."
-            return response
-
-        data = request.data
-        if len(data) % 6 != 0:
-            response.success = False
-            response.message = "수신 데이터 길이가 6의 배수가 아닙니다."
-            return response
-
-        node.get_logger().info(f"점자 비트 데이터 수신, 길이: {len(data)}")
-
-        def task():
-            nonlocal is_printing
-            is_printing = True
-            try:
-                num_chars = len(data) // 6
-                for char_idx in range(num_chars):
-                    char_bits = data[char_idx*6 : (char_idx+1)*6]
-                    is_last = (char_idx == num_chars - 1)
-                    print_braille_character(
-                        char_bits,
-                        offset_x=NEXT_CHAR_OFFSET_X,
-                        offset_y=NEXT_CHAR_OFFSET_Y,
-                        advance=not is_last,
-                    )
-
-                node.get_logger().info("점자 출력 완료")
-            except Exception as e:
-                node.get_logger().error(f"출력 에러: {e}")
-            finally:
-                is_printing = False
-
-        threading.Thread(target=task).start()
-
-        response.success = True
-        response.message = "점자 출력을 시작합니다."
-        return response
-        '''
-
-    # 서비스 서버 등록 (현재 미사용)
-    #srv = node.create_service(PrintBraille, 'print_braille_srv', braille_service_callback)
+    # 속도 및 가속도 설정[cite: 5]
+    MOVEJ_VEL, MOVEJ_ACC = 200.0, 200.0 #[cite: 5]
+    MOVE_VEL, MOVE_ACC = 100.0, 100.0 #[cite: 5]
+    Z_VEL, Z_ACC = 20.0, 20.0 #[cite: 5]
+    PUNCH_FORCE = 15.0 #[cite: 5]
+    CHAR_OFFSET = 5.5 #[cite: 5]
+    EPS = 1e-3 #[cite: 5]
 
     try:
         initialize_robot()
-        grip_open()
-        node.get_logger().info(f"Moving to joint position: {Q1}")
-        movej(Q1, vel=VELOCITY, acc=ACC)
-        movel(Q2, vel=VELOCITY, acc=ACC, ref =DR_TOOL)
-        print("점필을 쥐어주세요 (5초 대기)")
-        wait(5.0)
-        grip_close()
+        
+        Q1 = posj([0.0, 25.0, 55.0, 0.0, 100.0, 0.0]) #[cite: 5]
+        
+        # 1. 툴 픽업 좌표[cite: 5]
+        pos_tool_above = posx([494.0, -183.5, 242.5, 0.0, 180.0, 0.0]) #[cite: 5]
+        pos_tool_pick  = posx([494.0, -183.5, 95.0,  0.0, 180.0, 0.0]) #[cite: 5]
+        pos_tool_drop  = posx([494.0, -183.5, 105.0, 0.0, 180.0, 0.0]) #[cite: 5]
 
-        # 점자 출력 전 핀을 종이에서 띄우고 시작 상태 대기
-        move_tool(0.0, 0.0, 20.0, vel=PEN_Z_VELOCITY, acc=PEN_Z_ACC)
-        pen_state = "up"
+        # 2. 이쑤시개 픽업하러 가기
+        set_digital_output(1, 0); set_digital_output(2, 1) # 그리퍼 열기[cite: 5]
+        node.get_logger().info("점자 툴(이쑤시개) 픽업 중...")
+        
+        movej(Q1, vel=MOVEJ_VEL, acc=MOVEJ_ACC) # 홈 위치 거침
+        movel(pos_tool_above, vel=MOVEJ_VEL, acc=MOVEJ_ACC, ref=DR_BASE) #[cite: 5]
+        movel(pos_tool_pick, vel=Z_VEL, acc=Z_ACC, ref=DR_BASE) #[cite: 5]
+        
+        set_digital_output(1, 1); set_digital_output(2, 0) # 그리퍼 닫기[cite: 5]
+        wait(1.0) #[cite: 5]
+        
+        # 안전 높이로 복귀[cite: 5]
+        movel(pos_tool_above, vel=MOVEJ_VEL, acc=MOVEJ_ACC, ref=DR_BASE) #[cite: 5]
 
-        # ==========================================================
-        # 받은 점자 데이터를 순서대로 바로 출력
-        # 각 글자 시작점은 첫 글자 원점 (0,0) 기준 X축으로 NEXT_CHAR_OFFSET_X씩 이동
-        # ==========================================================
-        print(f"점자 출력 시작: {len(BRAILLE_DATA)}글자")
+        # 3. 점자 시작 좌표 계산 및 이동
+        num_chars = len(BRAILLE_DATA)
+        target_x, target_y = calculate_braille_start_position(num_chars, braille_offset=CHAR_OFFSET)
+        
+        # 안전 높이(242.5)를 유지하며 타각 위치로 이동[cite: 5]
+        pos_braille_start = posx([target_x, target_y, 242.5, 0.0, 180.0, 0.0]) #[cite: 5]
+        node.get_logger().info(f"타각 시작 위치로 이동 완료 (X: {target_x:.2f}, Y: {target_y:.2f})")
+        movel(pos_braille_start, vel=MOVEJ_VEL, acc=MOVEJ_ACC, ref=DR_BASE) #[cite: 5]
+        movel(posx([0.0, 0.0, 40.5, 0.0, 0.0, 0.0]), vel=Z_VEL, acc=Z_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
+
+        # ==========================================
+        # 상대 이동 및 힘 제어 펀치 함수
+        # ==========================================
+        def move_rel(dx, dy, v=MOVE_VEL, a=MOVE_ACC):
+            if abs(dx) < EPS and abs(dy) < EPS: return #[cite: 5]
+            # 180도 회전을 위해 dx, dy 부호 반전[cite: 5]
+            movel(posx([-dx, -dy, 0.0, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL, mod=DR_MV_MOD_REL) #[cite: 5]
+
+        def punch_dot():
+            safe_pos = get_current_posx(ref=DR_BASE)[0] #[cite: 5]
+            try:
+                # 확실한 타각을 위해 13mm 여유있게 하강
+                movel(posx([0.0, 0.0, 10.0, 0.0, 0.0, 0.0]), vel=Z_VEL, acc=Z_ACC, ref=DR_TOOL)
+                set_ref_coord(DR_TOOL) #[cite: 5]
+                task_compliance_ctrl([3000.0, 3000.0, 1000.0, 200.0, 200.0, 200.0], time=0.2) #[cite: 5]
+                
+                # 상대 모드(mod=1) 적용하여 영점 오차 무시 및 힘 제어 시간 0.2초 적용
+                set_desired_force([0.0, 0.0, PUNCH_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], time=0.2, mod=1)
+                
+                if (check_force_condition(DR_AXIS_Z, min=1, ref=DR_TOOL)) == 0:
+                    print("찍기 성공!")
+                    release_force(time=0.2) #[cite: 5]
+                    release_compliance_ctrl() #[cite: 5]
+                    set_ref_coord(DR_BASE) #[cite: 5]
+                    movel(safe_pos, vel=Z_VEL, acc=Z_ACC, ref=DR_BASE)
+                else :
+                    print("찍기 실패")
+                    
+                # 목표 힘에 도달하고 아주 짧게 뜸 들이기
+                
+            finally:
+                 # 242.5 높이로 복귀[cite: 5]
+                print("다음 점자")
+
+        # ==========================================
+        # 점자 출력 실행
+        # ==========================================
+        node.get_logger().info(f"점자 테스트 시작! (총 {num_chars}글자)")
         for i, bits in enumerate(BRAILLE_DATA):
-            is_last = (i == len(BRAILLE_DATA) - 1)
-            print_braille_character(
-                bits,
-                offset_x=NEXT_CHAR_OFFSET_X,
-                offset_y=NEXT_CHAR_OFFSET_Y,
-                advance=not is_last,
-            )
-        print("점자 출력 완료")
+            char_cur_x, char_cur_y = 0.0, 0.0 #[cite: 5]
+            
+            for j, val in enumerate(bits):
+                if val == 1: #[cite: 5]
+                    # 점자 내부 2.5mm 간격 계산[cite: 5]
+                    target_x_char, target_y_char = (j // 3) * 2.5, (j % 3) * 2.5 #[cite: 5]
+                    dx, dy = target_x_char - char_cur_x, target_y_char - char_cur_y #[cite: 5]
+                    
+                    move_rel(dx, dy) # 180도 회전 적용된 상대 이동[cite: 5]
+                    punch_dot() # 힘 제어 타각[cite: 5]
+                    char_cur_x, char_cur_y = target_x_char, target_y_char #[cite: 5]
+                    
+            if i != num_chars - 1:
+                # 글자와 글자 사이의 간격(CHAR_OFFSET) 이동[cite: 5]
+                move_rel(CHAR_OFFSET - char_cur_x, -char_cur_y) #[cite: 5]
 
-    except KeyboardInterrupt:
-        print("\nNode interrupted by user. Shutting down...")
+        # 4. 완료 후 툴 반납[cite: 5]
+        node.get_logger().info("점자 타각 완료, 툴 반납 중...")
+        
+        # 현재 위치에서 안전하게 242.5 높이로 Z축 상승 확인[cite: 5]
+        curr_pos = get_current_posx(ref=DR_BASE)[0] #[cite: 5]
+        curr_pos[2] = 242.5 #[cite: 5]
+        movel(curr_pos, vel=Z_VEL, acc=Z_ACC, ref=DR_BASE) #[cite: 5]
+        
+        # 툴 반납 위치로 이동[cite: 5]
+        movel(pos_tool_above, vel=MOVEJ_VEL, acc=MOVEJ_ACC, ref=DR_BASE) #[cite: 5]
+        movel(pos_tool_drop, vel=Z_VEL, acc=Z_ACC, ref=DR_BASE) #[cite: 5]
+        
+        set_digital_output(1, 0); set_digital_output(2, 1) # 그리퍼 열기 (내려놓기)[cite: 5]
+        wait(1.0) #[cite: 5]
+        
+        # 안전 높이 복귀 및 홈으로 이동[cite: 5]
+        movel(pos_tool_above, vel=MOVEJ_VEL, acc=MOVEJ_ACC, ref=DR_BASE) #[cite: 5]
+        movej(Q1, vel=MOVEJ_VEL, acc=MOVEJ_ACC) #[cite: 5]
+        
+        node.get_logger().info("✅ 점자 단독 테스트가 성공적으로 종료되었습니다.")
+
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        print(f"An unexpected error occurred: {e}")
+        node.get_logger().error(f"테스트 중 에러 발생: {e}")
     finally:
-        pen_up()
-        movej(Q1, vel=VELOCITY, acc=ACC)
-        grip_open()
         rclpy.shutdown()
-
 
 if __name__ == "__main__":
     main()
