@@ -89,6 +89,9 @@ class MasterNode(Node):
         """주기적으로 DB를 확인하여 translate_result == 1 인 데이터를 가져옴"""
         if self.is_working:
             return  # 현재 로봇이 작업 중이면 대기
+        if self.write_cmd_pub.get_subscription_count() == 0:
+            # 아직 로봇 제어 노드가 통신 준비가 안 되었으므로 다음 주기로 넘김
+            return
 
         self.check_count += 1
 
