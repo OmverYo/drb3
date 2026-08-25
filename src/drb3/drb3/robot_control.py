@@ -212,7 +212,7 @@ class WriteTask:
         
         success = False
         try:
-            Q1 = posj([0.0, 25.0, 60.0, 0.0, 94.5, 0.0])
+            Q1 = posj([13.2, -5.7, 96.5, 0.0, 90.0, 13.4])
             set_digital_output(1, 0); set_digital_output(2, 1) # 오픈
             
             logger.info("글쓰기 초기 위치로 이동 중...")
@@ -227,7 +227,15 @@ class WriteTask:
             
             def move_rel(dx, dy, dz=0.0, v=self.DRAW_VEL, a=self.DRAW_ACC):
                 if abs(dx) < self.EPS and abs(dy) < self.EPS and abs(dz) < self.EPS: return
-                movel(posx([dx, dy, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL)
+                
+                # ----------------------------------------------------
+                # [수정된 부분] XY 평면 180도 회전 적용 (방향 반전)
+                # Z축(dz)은 펜을 들고 내리는 방향이므로 부호를 유지합니다.
+                # ----------------------------------------------------
+                dx_rot = -dx
+                dy_rot = -dy
+                
+                movel(posx([dx_rot, dy_rot, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL)
             
             def pen_up():
                 if self.pen_state == "down": 
