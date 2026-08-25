@@ -213,46 +213,43 @@ class WriteTask:
         success = False
         try:
             Q1 = posj([13.2, -5.7, 96.5, 0.0, 90.0, 13.4])
+            
+            # 1. 붓펜 거치대 관련 좌표 정의 (rx=0, ry=180, rz=0 형태 유지)
+            pos_pen_above = posx([347.0, -185.0, 250.0, 0.0, 180.0, 0.0])
+            pos_pen_pick  = posx([347.0, -185.0, 150.0, 0.0, 180.0, 0.0])
+            pos_pen_drop  = posx([347.0, -185.0, 160.0, 0.0, 180.0, 0.0])
+            
             set_digital_output(1, 0); set_digital_output(2, 1) # 오픈
             
-            logger.info("글쓰기 초기 위치로 이동 중...")
-            movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
+            # 2. 붓펜 잡으러 가기
+            logger.info("붓펜 픽업 위치로 이동 중...")
+            movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+            movel(pos_pen_pick, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            
+            set_digital_output(1, 1); set_digital_output(2, 0) # 클로즈 (펜 잡기)
+            wait(1.0)
+            
+            # 안전 높이로 복귀
+            movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
 
+            # 3. 글쓰기 시작 위치 계산 및 이동
             text_start, _ = calculate_start_positions(len(text), 0, self.LETTER_SIZE, self.LETTER_SPACE)
             target_x, target_y = text_start[0], text_start[1]
     
-        # 2. 현재 위치 가져오기 (DR_BASE 기준)
-            current_pos = get_current_posx(ref=DR_BASE)
-            current_x = current_pos[0][0]
-            current_y = current_pos[0][1]
-    
-        # 3. 이동해야 할 변위(Delta) 계산
-            dx = target_x - current_x
-            dy = target_y - current_y
-    
-        # 4. 안전하게 현재 높이를 유지하며 상대 이동 (DR_BASE 기준, 상대 좌표 모드)
-            movel(posx([dx, dy, 0.0, 0.0, 0.0, 0.0]), vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE, mod=DR_MV_MOD_REL)
-    
-            logger.info(f"글쓰기 시작 위치로 상대 이동 완료 (dx: {dx:.2f}, dy: {dy:.2f})")
-
-            print("펜을 쥐어주세요 (5초 대기)")
-            wait(5.0)
-            set_digital_output(1, 1); set_digital_output(2, 0) # 클로즈
-            wait(1.0)
+            pos_write_above = posx([target_x, target_y, 250.0, 0.0, 180.0, 0.0])
+            pos_write_start = posx([target_x, target_y, 209.5, 0.0, 180.0, 0.0]) # 글쓰는 높이 weight 조절 필요!!!
+            
+            logger.info(f"글쓰기 시작 위치로 이동 중 (X: {target_x:.2f}, Y: {target_y:.2f})")
+            movel(pos_write_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+            movel(pos_write_start, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
             self.pen_state = "down"
             
             def move_rel(dx, dy, dz=0.0, v=self.DRAW_VEL, a=self.DRAW_ACC):
                 if abs(dx) < self.EPS and abs(dy) < self.EPS and abs(dz) < self.EPS: return
-                
-                # ----------------------------------------------------
-                # [수정된 부분] XY 평면 180도 회전 적용 (방향 반전)
-                # Z축(dz)은 펜을 들고 내리는 방향이므로 부호를 유지합니다.
-                # ----------------------------------------------------
                 dx_rot = -dx
                 dy_rot = -dy
-                
-                movel(posx([dx_rot, dy_rot, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL)
+                movel(posx([dx_rot, dy_rot, dz, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL, mod=DR_MV_MOD_REL)
             
             def pen_up():
                 if self.pen_state == "down": 
@@ -295,11 +292,26 @@ class WriteTask:
                 if i != len(text) - 1: 
                     move_rel(self.LETTER_SPACE - cur_x, -cur_y, v=self.Z_VEL, a=self.Z_ACC)
 
-            success = True
+            # 4. 글쓰기 완료 후 붓펜 반납
+            logger.info("글쓰기 완료, 붓펜 반납 중...")
             
-            # 종료 후 뱉기
+            # 현재 위치에서 Z축만 안전 높이(250)로 수직 상승
+            curr_pos = get_current_posx(ref=DR_BASE)[0]
+            curr_pos[2] = 250.0
+            movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            
+            # 반납 위치로 이동 후 내려놓기
+            movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+            movel(pos_pen_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            
+            set_digital_output(1, 0); set_digital_output(2, 1) # 오픈 (펜 놓기)
+            wait(1.0)
+            
+            # 안전 높이로 복귀 후 홈 이동
+            movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
             movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
-            set_digital_output(1, 0); set_digital_output(2, 1)
+
+            success = True
             
         except Exception as e:
             logger.error(f"글쓰기 중 에러: {e}")
@@ -573,7 +585,7 @@ def main(args=None):
     my_writer = WriteTask(
         movej_vel=200.0, movej_acc=200.0,
         draw_vel=200.0,  draw_acc=200.0,
-        z_vel=200.0,     z_acc=200.0,
+        z_vel=50.0,     z_acc=50.0,
         letter_size=20.0, letter_space=25.0
     )
     
@@ -586,7 +598,7 @@ def main(args=None):
     my_braille = BrailleTask(
         movej_vel=200.0, movej_acc=200.0,
         move_vel=100.0,  move_acc=100.0,
-        z_vel=20.0,      z_acc=20.0,
+        z_vel=20.0,      z_acc=20.0, # 건들지마!!!
         punch_force=15.0, char_offset=10.0
     )
 
