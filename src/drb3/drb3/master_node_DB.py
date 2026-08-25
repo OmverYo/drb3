@@ -86,7 +86,7 @@ class MasterNode(Node):
     # DB 폴링 및 작업 시작
     # ==========================================
     def check_database(self):
-        """주기적으로 DB를 확인하여 translate_result == False 인 데이터를 가져옴"""
+        """주기적으로 DB를 확인하여 translate_result == 1 인 데이터를 가져옴"""
         if self.is_working:
             return  # 현재 로봇이 작업 중이면 대기
 
@@ -98,8 +98,8 @@ class MasterNode(Node):
             
             # translate_result가 FALSE인 가장 오래된 작업 조회 (테이블명 tasks 가정)
             cur.execute("""
-                SELECT exec_id, text FROM tasks 
-                WHERE translate_result = FALSE 
+                SELECT exec_id, user_id,  text, font_size FROM tasks 
+                WHERE translate_status = 1 
                 ORDER BY request_date ASC LIMIT 1
             """)
             task = cur.fetchone()
@@ -107,10 +107,11 @@ class MasterNode(Node):
             if task:
                 self.is_working = True
                 self.current_exec_id = task[0]
-                self.current_text = task[1]
+                self.current_text = task[2]
+                self.font_size = task[3]
                 
                 self.get_logger().info("=" * 60)
-                self.get_logger().info(f"[DB 작업 감지] ID: {self.current_exec_id}, 텍스트: '{self.current_text}'")
+                self.get_logger().info(f"[DB 작업 감지] ID: {self.current_exec_id}, 텍스트: '{self.current_text}', 폰트 사이즈: '{self.font_size}'")
                 self.get_logger().info("=" * 60)
                 
                 # 1. 점자 번역 수행
@@ -179,7 +180,7 @@ class MasterNode(Node):
                 # 성공적으로 공정이 끝났으므로 상태를 TRUE로 업데이트
                 cur.execute("""
                     UPDATE tasks 
-                    SET translate_result = TRUE 
+                    SET translate_status = 3
                     WHERE exec_id = %s
                 """, (self.current_exec_id,))
                 
