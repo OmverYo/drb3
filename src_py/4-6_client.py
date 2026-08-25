@@ -1,4 +1,6 @@
 import socket
+import threading
+import queue
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
@@ -14,6 +16,7 @@ sock = None
 connected = False
 logged_in = False
 current_user = None
+response_queue = queue.Queue()
 
 
 # ============================================================
@@ -21,35 +24,28 @@ current_user = None
 # ============================================================
 
 def send_request(action, content):
-
     global sock
 
     if sock is None:
         return None
 
     try:
-        message = f"{action} : {content}"
-
         sock.sendall(
-            message.encode("utf-8")
+            f"{action} : {content}".encode("utf-8")
         )
 
-        data = sock.recv(4096)
+        while True:
+            response = response_queue.get()
+            if response is None:
+                return None
 
-        if not data:
-            return None
+            if handle_server_disconnect_message(response):
+                return None
 
-        response = data.decode("utf-8")
-
-        return response
+            return response
 
     except Exception as e:
-
-        messagebox.showerror(
-            "통신 오류",
-            str(e)
-        )
-
+        messagebox.showerror("통신 오류", str(e))
         return None
 
 
@@ -67,6 +63,72 @@ def parse_response(response):
     )
 
     return action, content
+
+
+def handle_server_disconnect_message(response):
+    global sock
+    global connected
+    global logged_in
+    global current_user
+
+    action, content = parse_response(response)
+
+    if action != "접속종료":
+        return False
+
+    try:
+        if sock:
+            sock.close()
+    except Exception:
+        pass
+
+    sock = None
+    connected = False
+    logged_in = False
+    current_user = None
+
+    message = content
+    if message.startswith("TIMEOUT|"):
+        message = message.split("|", 1)[1]
+
+    def show_disconnect():
+        messagebox.showinfo("자동 접속 해제", message)
+        show_connect_screen()
+
+    root.after(0, show_disconnect)
+    return True
+
+
+def server_receiver():
+    global sock
+
+    while True:
+        current_sock = sock
+        if current_sock is None:
+            return
+
+        try:
+            current_sock.settimeout(1)
+            data = current_sock.recv(4096)
+
+            if not data:
+                return
+
+            response = data.decode("utf-8")
+
+            if handle_server_disconnect_message(response):
+                return
+
+            response_queue.put(response)
+
+        except socket.timeout:
+            continue
+        except Exception:
+            return
+
+
+def start_server_receiver():
+    threading.Thread(target=server_receiver, daemon=True).start()
 
 
 # ============================================================
@@ -178,6 +240,8 @@ def show_connect_screen():
             sock.connect(
                 (ip, PORT)
             )
+
+            start_server_receiver()
 
             response = send_request(
                 "접속",
@@ -798,14 +862,15 @@ def show_work_screen():
         # 한글 검사
         if not is_korean_only(text):
 
-            # 한글이 아닌 마지막 입력 제거
+            # 한글이 아닌 입력 제거.
+            # 엔터(\n), 캐리지리턴(\r)은 입력값에서 무시한다.
             filtered = ""
 
             for char in text:
 
                 if (
                     "가" <= char <= "힣"
-                    or char in " \t\n"
+                    or char in " \t"
                 ):
                     filtered += char
 
@@ -842,6 +907,12 @@ def show_work_screen():
     input_text.bind(
         "<KeyRelease>",
         validate_input
+    )
+
+    # 엔터 입력은 무시한다.
+    input_text.bind(
+        "<Return>",
+        lambda event: "break"
     )
 
 

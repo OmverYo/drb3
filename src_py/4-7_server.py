@@ -2,7 +2,7 @@
 import socket
 import threading
 import tkinter as tk
-from tkinter import messagebox, scrolledtext
+from tkinter import messagebox, scrolledtext, ttk, font as tkfont
 import logging
 import os
 import hashlib
@@ -72,6 +72,12 @@ logged_in_users = {}
 MAX_USERS = 5
 
 state_lock = threading.Lock()
+
+TASKS_PAGE_SIZE = 5
+tasks_page_combo = None
+tasks_table = None
+tasks_total_pages_label = None
+tasks_request_button = None
 
 
 # ============================================================
@@ -146,8 +152,9 @@ def initialize_database():
             exec_id BIGINT NOT NULL,
             user_id VARCHAR(10) NOT NULL,
             text VARCHAR(10) NOT NULL,
+            font_size INT NOT NULL DEFAULT 10,
             request_date DATE NOT NULL,
-            translate_result BOOLEAN NOT NULL DEFAULT FALSE,
+            translate_status INT NOT NULL DEFAULT 0,
 
             -- 기본키
             CONSTRAINT pk_exec_translations
@@ -172,9 +179,9 @@ def initialize_database():
             CONSTRAINT chk_exec_translations_text
                 CHECK (text ~ '^[가-힣 ]{1,10}$'),
 
-            -- TRUE / FALSE만 허용
-            CONSTRAINT chk_exec_translations_result
-                CHECK (translate_result IN (TRUE, FALSE))
+            -- 번역 상태: 정수형, 기본값 0
+            CONSTRAINT chk_exec_translations_status
+                CHECK (translate_status >= 0)
         )
     """)
 
@@ -185,6 +192,33 @@ def initialize_database():
         ALTER TABLE tasks
         ADD CONSTRAINT chk_exec_translations_text
         CHECK (text ~ '^[가-힣 ]{1,10}$')
+    """)
+
+    # 기존 DB에도 font_size 컬럼을 적용한다.
+    # 기존 작업은 기본 폰트 크기 10으로 보정한다.
+    cur.execute("""
+        ALTER TABLE tasks
+        ADD COLUMN IF NOT EXISTS font_size INT NOT NULL DEFAULT 10
+    """)
+    cur.execute("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_exec_translations_font_size")
+    cur.execute("""
+        ALTER TABLE tasks
+        ADD CONSTRAINT chk_exec_translations_font_size
+        CHECK (font_size IN (5, 10, 15))
+    """)
+
+    # 기존 DB에도 translate_status 컬럼을 적용한다.
+    cur.execute("ALTER TABLE tasks DROP COLUMN IF EXISTS translate_result")
+    cur.execute("""
+        ALTER TABLE tasks
+        ADD COLUMN IF NOT EXISTS translate_status INT NOT NULL DEFAULT 0
+    """)
+    cur.execute("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_exec_translations_result")
+    cur.execute("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_exec_translations_status")
+    cur.execute("""
+        ALTER TABLE tasks
+        ADD CONSTRAINT chk_exec_translations_status
+        CHECK (translate_status >= 0)
     """)
 
     conn.commit()
@@ -216,6 +250,52 @@ def get_local_ip():
 # 로그 처리
 # ============================================================
 
+def get_tasks_page_data(page=1):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM tasks")
+        total_rows = cur.fetchone()[0]
+        total_pages = max(1, (total_rows + TASKS_PAGE_SIZE - 1) // TASKS_PAGE_SIZE)
+        page = max(1, min(page, total_pages))
+        offset = (page - 1) * TASKS_PAGE_SIZE
+        cur.execute("""
+            SELECT exec_id, user_id, text, font_size, request_date, translate_status
+            FROM tasks
+            ORDER BY exec_id ASC
+            LIMIT %s OFFSET %s
+        """, (TASKS_PAGE_SIZE, offset))
+        return cur.fetchall(), total_pages
+    except Exception as e:
+        write_log(f"tasks 조회 실패 - 오류={e}")
+        return [], 1
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+def refresh_tasks_table(event=None):
+    if tasks_table is None or tasks_page_combo is None:
+        return
+    try:
+        page = int(tasks_page_combo.get())
+    except (ValueError, TypeError):
+        page = 1
+    rows, total_pages = get_tasks_page_data(page)
+    if page > total_pages:
+        page = total_pages
+        tasks_page_combo.set(str(page))
+        rows, total_pages = get_tasks_page_data(page)
+    for item in tasks_table.get_children():
+        tasks_table.delete(item)
+    for row in rows:
+        tasks_table.insert("", tk.END, values=row)
+    if tasks_total_pages_label is not None:
+        tasks_total_pages_label.config(text=f"총 {total_pages} 페이지")
+
+
 def write_log(message):
     if server_running:
         logger.info(message)
@@ -237,6 +317,17 @@ def refresh_log_screen():
             log_text.insert(tk.END, line)
 
         log_text.config(state="disabled")
+
+        if tasks_page_combo is not None:
+            _, total_pages = get_tasks_page_data(1)
+            current = tasks_page_combo.get() or "1"
+            tasks_page_combo["values"] = [str(i) for i in range(1, total_pages + 1)]
+            try:
+                current = min(int(current), total_pages)
+            except ValueError:
+                current = 1
+            tasks_page_combo.set(str(current))
+            refresh_tasks_table()
 
     except Exception:
         pass
@@ -510,18 +601,23 @@ def translate(content, user_id):
         conn = get_db_connection()
         cur = conn.cursor()
 
-        exec_id = int(datetime.now().timestamp() * 1_000_000)
-        while True:
-            cur.execute("SELECT 1 FROM tasks WHERE exec_id = %s", (exec_id,))
-            if cur.fetchone() is None:
-                break
-            exec_id += 1
+        # exec_id는 1부터 시작하는 오름차순 번호로 생성한다.
+        # 동시 요청에서도 중복되지 않도록 tasks 테이블을 잠근다.
+        cur.execute("LOCK TABLE tasks IN EXCLUSIVE MODE")
+        cur.execute("SELECT COALESCE(MAX(exec_id), 0) + 1 FROM tasks")
+        exec_id = cur.fetchone()[0]
 
         cur.execute("""
             INSERT INTO tasks
-            (exec_id, user_id, text, request_date, translate_result)
-            VALUES (%s, %s, %s, CURRENT_DATE, %s)
-        """, (exec_id, user_id, text, True))
+            (exec_id, user_id, text, font_size, request_date, translate_status)
+            VALUES (%s, %s, %s, %s, CURRENT_DATE, %s)
+        """, (exec_id, user_id, text, font_size, 0))
+        # translate_status value
+        # 0 : 클라 -> 서버 요청 상태
+        # 1 : 서버 -> 로봇 요청 상태
+        # 2 : 로봇 작업 수행 중 상태
+        # 3 : 로봇 작업 완료 상태 ; 성공
+        # 4 : 로봇 작업 완료 상태 ; 실패
 
         conn.commit()
         cur.close()
@@ -536,6 +632,80 @@ def translate(content, user_id):
     except Exception as e:
         write_log(f"번역 실패 - ID={user_id}, 오류={e}")
         return make_response("번역", f"FAIL|번역 오류: {e}")
+
+
+# ============================================================
+# 작업 요청
+# ============================================================
+
+def request_task(exec_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # 선택한 작업을 잠근 뒤 현재 상태를 확인한다.
+        cur.execute("""
+            SELECT translate_status
+            FROM tasks
+            WHERE exec_id = %s
+            FOR UPDATE
+        """, (exec_id,))
+        row = cur.fetchone()
+
+        if row is None:
+            conn.rollback()
+            return False, "선택한 작업을 찾을 수 없습니다."
+
+        selected_status = row[0]
+
+        if selected_status != 0:
+            conn.rollback()
+            return False, "상태가 0 인 작업을 선택해 주세요"
+
+        # 전체 tasks에서 status=1인 작업을 확인한다.
+        cur.execute("""
+            SELECT exec_id
+            FROM tasks
+            WHERE translate_status = 1
+            ORDER BY exec_id ASC
+            LIMIT 1
+        """)
+        running_row = cur.fetchone()
+
+        if running_row is not None:
+            running_exec_id = running_row[0]
+            conn.rollback()
+            return False, (
+                f"exec_id {running_exec_id} 의 작업이 진행 중입니다. "
+                "잠시 후 다시 시도해 주세요"
+            )
+
+        cur.execute("""
+            UPDATE tasks
+            SET translate_status = 1
+            WHERE exec_id = %s AND translate_status = 0
+        """, (exec_id,))
+
+        if cur.rowcount != 1:
+            conn.rollback()
+            return False, "상태가 0 인 작업을 선택해 주세요"
+
+        conn.commit()
+        write_log(f"작업 요청 - exec_id={exec_id}, status=0 -> 1")
+        return True, f"로봇에 exec_id {exec_id} 를 작업 요청하였습니다."
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        write_log(f"작업 요청 실패 - exec_id={exec_id}, 오류={e}")
+        return False, f"작업 요청 중 오류가 발생했습니다: {e}"
+    finally:
+        if cur:
+            cur.close()
+        if conn:
+            conn.close()
 
 
 # ============================================================
@@ -732,6 +902,18 @@ def handle_client(client_socket, client_address):
                 client_socket.sendall(
                     response.encode("utf-8")
                 )
+
+    except socket.timeout:
+        try:
+            response = make_response(
+                "접속종료",
+                "TIMEOUT|일정 시간 동안 요청이 없어 서버와의 접속이 자동 해제되었습니다."
+            )
+            client_socket.sendall(response.encode("utf-8"))
+        except Exception:
+            pass
+
+        write_log(f"자동 접속 해제 - IP={client_ip}, 사유=소켓 timeout")
 
     except Exception as e:
 
@@ -930,29 +1112,137 @@ def update_status():
     root.after(1000, update_status)
 
 
-# 로그
-log_title = tk.Label(
-    root,
-    text="최근 로그 10개",
+# tasks 제목 / 페이지 / 작업 요청
+tasks_header_frame = tk.Frame(root)
+tasks_header_frame.pack(fill="x", padx=10, pady=(10, 3))
+
+# "Page: [combo box] 총 1 페이지"를 Tasks 제목의 왼쪽 끝에 배치한다.
+tasks_page_frame = tk.Frame(tasks_header_frame)
+tasks_page_frame.pack(side="left", anchor="w")
+
+tk.Label(
+    tasks_page_frame,
+    text="Page:",
+    font=("Arial", 11)
+).pack(side="left", padx=(0, 5))
+
+tasks_page_combo = ttk.Combobox(
+    tasks_page_frame,
+    state="readonly",
+    width=6
+)
+tasks_page_combo.pack(side="left")
+tasks_page_combo.bind("<<ComboboxSelected>>", refresh_tasks_table)
+
+tasks_total_pages_label = tk.Label(
+    tasks_page_frame,
+    text="총 1 페이지",
+    font=("Arial", 10)
+)
+tasks_total_pages_label.pack(side="left", padx=8)
+
+tasks_title = tk.Label(
+    tasks_header_frame,
+    text="Tasks",
     font=("Arial", 13, "bold")
 )
+tasks_title.place(relx=0.5, rely=0.5, anchor="center")
 
-log_title.pack(pady=(15, 5))
+def on_task_request():
+    selected_items = tasks_table.selection()
 
+    if not selected_items:
+        messagebox.showwarning("작업 요청", "작업을 선택해 주세요")
+        return
+
+    values = tasks_table.item(selected_items[0], "values")
+    exec_id = values[0]
+    status = int(values[5])
+
+    if status != 0:
+        messagebox.showwarning(
+            "작업 요청",
+            "상태가 0 인 작업을 선택해 주세요"
+        )
+        return
+
+    success, message = request_task(exec_id)
+
+    if success:
+        refresh_tasks_table()
+        messagebox.showinfo("작업 요청", message)
+    else:
+        refresh_tasks_table()
+        messagebox.showwarning("작업 요청", message)
+
+tasks_request_button = tk.Button(
+    tasks_header_frame,
+    text="작업 요청",
+    font=("Arial", 10, "bold"),
+    command=on_task_request
+)
+tasks_request_button.pack(side="right", anchor="e")
+
+tasks_frame = tk.Frame(root)
+tasks_frame.pack(padx=10, pady=3, fill="both", expand=True)
+
+tasks_columns = (
+    "exec_id",
+    "user_id",
+    "text",
+    "font_size",
+    "request_date",
+    "translate_status"
+)
+tasks_table = ttk.Treeview(
+    tasks_frame,
+    columns=tasks_columns,
+    show="headings",
+    height=5
+)
+
+# 칼럼 폭은 칼럼명의 표시 폭을 기준으로 하고 text를 가장 크게 설정한다.
+header_font = tkfont.Font(family="Arial", size=10)
+column_titles = {
+    "exec_id": "exec_id",
+    "user_id": "user_id",
+    "text": "text",
+    "font_size": "font_size",
+    "request_date": "request_date",
+    "translate_status": "translate_status"
+}
+base_widths = {
+    col: max(80, header_font.measure(title) + 24)
+    for col, title in column_titles.items()
+}
+base_widths["text"] = max(base_widths["text"] * 2, 180)
+
+for col in tasks_columns:
+    tasks_table.heading(col, text=column_titles[col])
+    tasks_table.column(
+        col,
+        width=base_widths[col],
+        minwidth=base_widths[col],
+        anchor="center"
+    )
+
+tasks_scrollbar = ttk.Scrollbar(
+    tasks_frame,
+    orient="vertical",
+    command=tasks_table.yview
+)
+tasks_table.configure(yscrollcommand=tasks_scrollbar.set)
+tasks_table.pack(side="left", fill="both", expand=True)
+tasks_scrollbar.pack(side="right", fill="y")
+
+# 로그
+log_title = tk.Label(root, text="최근 로그 10개", font=("Arial", 13, "bold"))
+log_title.pack(pady=(5, 3))
 
 log_text = scrolledtext.ScrolledText(
-    root,
-    width=80,
-    height=15,
-    state="disabled"
+    root, width=80, height=7, state="disabled"
 )
-
-log_text.pack(
-    padx=10,
-    pady=5,
-    fill="both",
-    expand=True
-)
+log_text.pack(padx=10, pady=3, fill="both", expand=True)
 
 
 # DB 초기화
