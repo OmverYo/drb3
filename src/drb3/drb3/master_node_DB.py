@@ -135,7 +135,7 @@ class MasterNode(Node):
 
                 # 2. 글쓰기 제어 노드로 토픽 발행
                 braille_msg = Int32MultiArray()
-                braille_msg.data = self.flat_bits
+                braille_msg.data = self.flat_bits + [self.font_size]
                 self.waiting_for_braille = True
                 self.braille_cmd_pub.publish(braille_msg)
                 self.get_logger().info("점자 타각 명령 토픽(/braille_cmd) 발행 완료")

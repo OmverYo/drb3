@@ -306,13 +306,13 @@ class WriteTask:
             target_x, target_y = text_start[0], text_start[1]
     
             pos_write_above = posx([target_x, target_y, 250.0, 0.0, 180.0, 0.0])
-            pos_write_start = posx([target_x, target_y, 213.5, 0.0, 180.0, 0.0])
+            pos_write_start = posx([target_x, target_y, 223.5, 0.0, 180.0, 0.0])
             
             logger.info(f"글쓰기 위치로 이동 중 (X: {target_x:.2f}, Y: {target_y:.2f})")
             movel(pos_write_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
             movel(pos_write_start, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
-            self.pen_state = "down"
+            self.pen_state = "up"
             
             # 💡 [중요] 펜이 떨어졌으면(self.pen_dropped == True) 명령을 무시하도록 방어 코드 추가
             def move_rel(dx, dy, dz=0.0, v=self.DRAW_VEL, a=self.DRAW_ACC):
@@ -348,12 +348,10 @@ class WriteTask:
                 
                 for stroke in strokes:
                     sx, sy = stroke[0]
-                    if first and self.pen_state == "down": 
-                        move_rel(sx - cur_x, sy - cur_y)
-                    else: 
-                        pen_up()
-                        move_rel(sx - cur_x, sy - cur_y, v=self.Z_VEL, a=self.Z_ACC) 
-                        pen_down()
+                    
+                    pen_up()
+                    move_rel(sx - cur_x, sy - cur_y, v=self.Z_VEL, a=self.Z_ACC) 
+                    pen_down()
                     
                     cur_x, cur_y = sx, sy
                     first = False
@@ -477,13 +475,19 @@ class BrailleTask:
         self.CHAR_OFFSET = char_offset
         self.EPS = 1e-3
 
-    def execute(self, flat_bits, logger):
+    def execute(self, data_list, logger):
         from DSR_ROBOT2 import (movej, movel, set_digital_output, wait, 
                                 set_ref_coord, task_compliance_ctrl, set_desired_force, 
                                 release_force, release_compliance_ctrl, check_force_condition, get_current_posx,
                                 DR_TOOL, DR_BASE, DR_AXIS_Z, DR_MV_MOD_REL, set_stiffnessx, get_tool_force)
         from DR_common2 import posx, posj
-        
+        if len(data_list) > 0 and data_list[-1] > 1: # 점자는 0과 1로만 이루어지므로 1 초과면 폰트 사이즈임
+            letter_size = float(data_list.pop())
+        else:
+            letter_size = 20.0
+            
+        flat_bits = data_list
+        num_chars = len(flat_bits) // 6
         success = False
         try:
             Q1 = posj([0.0, 25.0, 55.0, 0.0, 100.0, 0.0])
@@ -509,7 +513,7 @@ class BrailleTask:
 
             # 3. 점자 타각 시작 위치 계산 및 이동
             num_chars = len(flat_bits) // 6
-            _, braille_start = calculate_start_positions(0, num_chars, braille_offset=self.CHAR_OFFSET)
+            _, braille_start = calculate_start_positions(0, num_chars, letter_size=letter_size, braille_offset=self.CHAR_OFFSET)
             target_x, target_y = braille_start[0], braille_start[1]
             
             # 242.5 높이를 유지하며 시작 X, Y로 이동
@@ -833,9 +837,9 @@ def calculate_start_positions(text_len, braille_len, letter_size=20.0, letter_sp
     braille_start_x = x_center - (braille_width / 2.0)
     
     # 4. 점자 시작 Y 좌표: 글자의 제일 낮은 Y 좌표(text_start_y - letter_size)에서 20mm 아래
-    lowest_text_y = text_start_y - letter_size
+    lowest_text_y = y_max - letter_size
     braille_start_y = lowest_text_y - 20.0
-    
+
     return [text_start_x, text_start_y], [braille_start_x, braille_start_y]
 
 # ==========================================
