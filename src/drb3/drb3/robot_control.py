@@ -570,17 +570,153 @@ class BrailleTask:
             
         return success
 
+# ==========================================
+# [5] 도장 찍기 작업
+# ==========================================
+
+
+class StampTask:
+    def __init__(self, move_vel=150.0, move_acc=150.0, z_vel=50.0, z_acc=50.0, press_force=10.0):
+        self.MOVE_VEL = move_vel
+        self.MOVE_ACC = move_acc
+        self.Z_VEL = z_vel
+        self.Z_ACC = z_acc
+        self.PRESS_FORCE = press_force
+
+    def execute(self, logger):
+        from DSR_ROBOT2 import (movej, movel, set_digital_output, wait, 
+                                set_ref_coord, task_compliance_ctrl, set_desired_force, 
+                                release_force, release_compliance_ctrl, check_force_condition,
+                                set_stiffnessx, get_tool_force,
+                                DR_TOOL, DR_BASE, DR_AXIS_Z)
+        from DR_common2 import posx, posj
+        
+        success = False
+        try:
+            Q_HOME = posj([0.0, 25.0, 55.0, 0.0, 100.0, 0.0])
+            
+            # 절대 좌표 기준 (목표 표면 Z값)
+            pos_ink_above = posx([640.0, -2.0, 200.0, 0.0, 180.0, 0.0])
+            pos_ink       = posx([640.0, -2.0, 157.0, 0.0, 180.0, 0.0])
+            
+            pos_stamp_above = posx([516.0, -43.0, 200.0, 90.0, 180.0, 0.0])
+            pos_stamp       = posx([516.0, -43.0, 135.0, 90.0, 180.0, 0.0])
+
+            # 1. 인주 묻히기 위치로 이동 (안전 높이)
+            logger.info("도장 픽업 및 인주 묻히기 위치로 이동")
+            set_digital_output(1, 0); set_digital_output(2, 1)
+            movel(pos_ink_above, vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_BASE)
+            
+            
+            # ==========================================
+            # [인주 묻히기]
+            # ==========================================
+            logger.info("힘 제어로 인주 묻히기 시작")
+            set_ref_coord(DR_TOOL)
+            task_compliance_ctrl()
+            set_stiffnessx([3000.0, 3000.0, 500.0, 100.0, 100.0, 200.0])
+            
+            # 순응 제어(컴플라이언스)가 켜진 상태로 목표 위치까지 안전하게 하강
+            movel(pos_ink, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            set_digital_output(1, 1); set_digital_output(2, 0)
+            wait(1.0)
+            set_desired_force([0.0, 0.0, self.PRESS_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], mod=1)
+
+            target_force = self.PRESS_FORCE * 0.8
+            force_check_count = 0
+            start_time = time.time()
+            
+            while True:
+                current_force = get_tool_force()
+                force_check_count += 1
+                if force_check_count % 10 == 0:
+                    logger.info(f"[FORCE 인주] Fx={current_force[0]:.2f}, Fy={current_force[1]:.2f}, Fz={current_force[2]:.2f}")
+
+                if not check_force_condition(DR_AXIS_Z, min=target_force, max=150, ref=DR_TOOL):
+                    logger.info(f"[FORCE 인주] 인주 누르기 감지! Fz={current_force[2]:.2f}N")
+                    break
+
+                if time.time() - start_time > 5.0:
+                    logger.error("[ERROR] 인주 누르기 타임아웃!")
+                    break
+                time.sleep(0.05)
+
+            wait(1.5) # 인주가 충분히 묻도록 대기
+            release_force(time=0.0)
+            release_compliance_ctrl()
+            
+            # 인주 찍고 다시 상승
+            movel(pos_ink_above, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+
+            # ==========================================
+            # [도장 찍기]
+            # ==========================================
+            logger.info("도장 찍을 위치로 이동")
+            movel(pos_stamp_above, vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_BASE)
+
+            logger.info("힘 제어로 도장 찍기 시작")
+            set_ref_coord(DR_TOOL)
+            task_compliance_ctrl()
+            set_stiffnessx([3000.0, 3000.0, 500.0, 100.0, 100.0, 200.0])
+            
+            # 순응 제어가 켜진 상태로 도장 위치까지 하강
+            movel(pos_stamp, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            set_desired_force([0.0, 0.0, self.PRESS_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], mod=1)
+
+            force_check_count = 0
+            start_time = time.time()
+
+            while True:
+                current_force = get_tool_force()
+                force_check_count += 1
+                if force_check_count % 10 == 0:
+                    logger.info(f"[FORCE 도장] Fx={current_force[0]:.2f}, Fy={current_force[1]:.2f}, Fz={current_force[2]:.2f}")
+
+                if not check_force_condition(DR_AXIS_Z, min=target_force, max=150, ref=DR_TOOL):
+                    logger.info(f"[FORCE 도장] 도장 누르기 감지! Fz={current_force[2]:.2f}N")
+                    break
+
+                if time.time() - start_time > 5.0:
+                    logger.error("[ERROR] 도장 누르기 타임아웃!")
+                    break
+                time.sleep(0.05)
+
+            wait(1.5) # 도장이 선명하게 찍히도록 대기
+            release_force(time=0.0)
+            release_compliance_ctrl()
+            
+            # 도장 찍고 상승
+            movel(pos_stamp_above, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+
+            # 5. 종료 작업
+            logger.info("도장 찍기 완료, 반납 후 홈 복귀")
+            movel(pos_ink_above, vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_BASE)
+            movel(pos_ink, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            
+            set_digital_output(1, 0); set_digital_output(2, 1) # 도장 놓기
+            wait(1.0)
+            
+            movel(pos_ink_above, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            movej(Q_HOME, vel=self.MOVE_VEL, acc=self.MOVE_ACC)
+            success = True
+
+        except Exception as e:
+            logger.error(f"도장 찍기 에러: {e}")
+            
+        return success
+
 
 # ==========================================
-# [5] 통신 담당 메인 노드 
+# [6] 통신 담당 메인 노드 
 # ==========================================
 class RobotControlNode(Node):
-    def __init__(self, writer_obj, braille_obj, flipper_obj):
+    def __init__(self, writer_obj, braille_obj, flipper_obj, stamper_obj):
         super().__init__('robot_control_node', namespace=ROBOT_ID)
         
         self.writer = writer_obj
         self.braille_printer = braille_obj
         self.flipper = flipper_obj
+        self.stamper = stamper_obj
         
         self.sub_write = self.create_subscription(String, '/write_cmd', self.write_cmd_cb, 10)
         self.sub_braille = self.create_subscription(Int32MultiArray, '/braille_cmd', self.braille_cmd_cb, 10)
@@ -601,32 +737,39 @@ class RobotControlNode(Node):
         """큐에 담긴 작업을 하나씩 꺼내어 실행"""
         if self.task_queue:
             task_type, data     = self.task_queue.pop(0)
+
+            if task_type == 'braille':
+                # 4. MasterNode가 점자 명령을 쏘면 실행
+                is_success = self.braille_printer.execute(data, self.get_logger())
+                if is_success:
+                    self.get_logger().info("점자 찍기 완료! 이어서 자동으로 종이 뒤집기를 시작합니다.")
+                    is_success = self.flipper.execute(self.get_logger())
+
+                res = Bool()
+                res.data = is_success
+                self.pub_braille_done.publish(res)
+
             
-            if task_type == 'write':
+            
+            elif task_type == 'write':
                 # 1. 글쓰기 먼저 실행
                 is_success = self.writer.execute(data, self.get_logger())
                 
                 # 2. 글쓰기가 성공했다면, "종이 뒤집기"를 통신 없이 내부적으로 바로 실행!
                 if is_success:
-                    self.get_logger().info("글쓰기 완료! 이어서 자동으로 종이 뒤집기를 시작합니다.")
-                    is_success = self.flipper.execute(self.get_logger())
+                    self.get_logger().info("글자 쓰기 완료! 이어서 도장 찍기를 시작합니다.") 
+                    is_success = self.stamper.execute(self.get_logger())
                 
-                # 3. 글쓰기 + 종이 뒤집기의 최종 결과를 MasterNode에게 보고
+                # 3. 글쓰기 + 종이 뒤집기 + 도장 찍기 최종 결과를 MasterNode에게 보고
                 res = Bool()
                 res.data = is_success
                 self.pub_write_done.publish(res)
                 
-            elif task_type == 'braille':
-                # 4. MasterNode가 점자 명령을 쏘면 실행
-                is_success = self.braille_printer.execute(data, self.get_logger())
-                res = Bool()
-                res.data = is_success
-                self.pub_braille_done.publish(res)
 
 
 
 # ==========================================
-# [6] 중심 잡기 함수
+# [7] 중심 잡기 함수
 # ==========================================
 
 def calculate_start_positions(text_len, braille_len, letter_size=20.0, letter_space=25.0, braille_offset=10.0):
@@ -653,7 +796,7 @@ def calculate_start_positions(text_len, braille_len, letter_size=20.0, letter_sp
     return [text_start_x, text_start_y], [braille_start_x, braille_start_y]
 
 # ==========================================
-# [7] 메인 실행 함수
+# [8] 메인 실행 함수
 # ==========================================
 def main(args=None):
     rclpy.init(args=args)
@@ -681,9 +824,14 @@ def main(args=None):
         z_vel=20.0,      z_acc=20.0, # 찍기 강도 영향있음 테스트 필요!!!!
         punch_force=15.0, char_offset=5.5
     )
+    my_stamper = StampTask(
+        move_vel=150.0, move_acc=150.0,
+        z_vel=50.0, z_acc=50.0,
+        press_force=10.0 # 약한 힘으로 시작 (테스트 후 증가)
+    )
 
     # 3. 노드 생성 및 주입
-    node = RobotControlNode(my_writer, my_braille, my_flipper)
+    node = RobotControlNode(my_writer, my_braille, my_flipper, my_stamper)
     DR_init.__dsr__node = node
 
     # 4. 초기화!

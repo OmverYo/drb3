@@ -86,9 +86,9 @@ class StampTask:
             # 인주 찍고 다시 상승
             movel(pos_ink_above, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
 
-            # ==========================================
-            # [도장 찍기]
-            # ==========================================
+# ==========================================
+# [도장 찍기]
+# ==========================================
             logger.info("도장 찍을 위치로 이동")
             movel(pos_stamp_above, vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_BASE)
 

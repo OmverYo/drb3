@@ -132,11 +132,11 @@ class MasterNode(Node):
                 self.get_logger().info(f"점자 비트 생성 완료 (총 {len(self.flat_bits)//6}글자)")
 
                 # 2. 글쓰기 제어 노드로 토픽 발행
-                msg = String()
-                msg.data = self.current_text
-                self.waiting_for_write = True
-                self.write_cmd_pub.publish(msg)
-                self.get_logger().info("글쓰기 명령 토픽(/write_cmd) 발행 완료")
+                braille_msg = Int32MultiArray()
+                braille_msg.data = self.flat_bits
+                self.waiting_for_braille = True
+                self.braille_cmd_pub.publish(braille_msg)
+                self.get_logger().info("점자 타각 명령 토픽(/braille_cmd) 발행 완료")
 
             cur.close()
             conn.close()
@@ -147,30 +147,30 @@ class MasterNode(Node):
     # ==========================================
     # 제어 완료 콜백
     # ==========================================
-    def write_done_callback(self, msg):
-        if self.waiting_for_write:
-            self.waiting_for_write = False
-            if msg.data:
-                self.get_logger().info("글쓰기 완료 수신! 이어서 점자 타각 시작")
-                
-                # 3. 점자 타각 노드로 명령 토픽 발행
-                braille_msg = Int32MultiArray()
-                braille_msg.data = self.flat_bits
-                self.waiting_for_braille = True
-                self.braille_cmd_pub.publish(braille_msg)
-                self.get_logger().info("점자 타각 명령 토픽(/braille_cmd) 발행 완료")
-            else:
-                self.get_logger().error("글쓰기 실패. 공정을 중단합니다.")
-                self.finish_task(success=False)
-
     def braille_done_callback(self, msg):
         if self.waiting_for_braille:
             self.waiting_for_braille = False
             if msg.data:
-                self.get_logger().info("글쓰기 및 점자 타각 공정이 모두 성공적으로 끝났습니다!")
+                self.get_logger().info("점자 타각과 종이 뒤집기 완료 수신! 이어서 글쓰기 시작")
+                
+                # 3. 점자가 끝나면 글쓰기 제어 노드로 명령 토픽 발행
+                msg_write = String()
+                msg_write.data = self.current_text
+                self.waiting_for_write = True
+                self.write_cmd_pub.publish(msg_write)
+                self.get_logger().info("글쓰기 명령 토픽(/write_cmd) 발행 완료")
+            else:
+                self.get_logger().error("점자 타각 실패. 공정을 중단합니다.")
+                self.finish_task(success=False)
+
+    def write_done_callback(self, msg):
+        if self.waiting_for_write:
+            self.waiting_for_write = False
+            if msg.data:
+                self.get_logger().info("점자 타각 및 글쓰기과 도장 공정이 모두 성공적으로 끝났습니다!")
                 self.finish_task(success=True)
             else:
-                self.get_logger().error("점자 타각 실패.")
+                self.get_logger().error("글쓰기 실패.")
                 self.finish_task(success=False)
 
     def finish_task(self, success):
