@@ -600,7 +600,7 @@ class RobotControlNode(Node):
     def process_queue(self):
         """큐에 담긴 작업을 하나씩 꺼내어 실행"""
         if self.task_queue:
-            task_type, data = self.task_queue.pop(0)
+            task_type, data     = self.task_queue.pop(0)
             
             if task_type == 'write':
                 # 1. 글쓰기 먼저 실행
