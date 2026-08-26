@@ -1,3 +1,4 @@
+import json
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32MultiArray, Bool
@@ -197,15 +198,15 @@ class HangulEngine:
 # [2] 글쓰기 작업
 # ==========================================
 class WriteTask:
-    def __init__(self, movej_vel=200.0, movej_acc=200.0, draw_vel=50.0, draw_acc=50.0, z_vel=100.0, z_acc=100.0, letter_size=20.0, letter_space=10.0):
+    def __init__(self, movej_vel=200.0, movej_acc=200.0, draw_vel=50.0, draw_acc=50.0, z_vel=100.0, z_acc=100.0):
         self.MOVEJ_VEL = movej_vel
         self.MOVEJ_ACC = movej_acc
         self.DRAW_VEL = draw_vel
         self.DRAW_ACC = draw_acc
         self.Z_VEL = z_vel
         self.Z_ACC = z_acc
-        self.LETTER_SIZE = letter_size
-        self.LETTER_SPACE = letter_space
+        '''self.LETTER_SIZE = letter_size
+        self.LETTER_SPACE = letter_space'''
         self.EPS = 1e-3
         self.pen_state = "down"
         
@@ -222,10 +223,27 @@ class WriteTask:
         # t_index는 보통 단일 그리퍼일 경우 0을 사용합니다.
         self.t_index = 0
 
-    def execute(self, text, logger):
+
+
+    def execute(self, data, logger):
         from DSR_ROBOT2 import (movej, movel, wait, DR_TOOL, DR_MV_MOD_REL, 
                                 get_current_posx, DR_BASE, DR_QSTOP)
         from DR_common2 import posx, posj
+
+        text = data.get("text", "")
+        letter_size = float(data.get("size", 20.0))
+        
+        if letter_size == 15.0:
+            letter_space = 18.0
+        elif letter_size == 40.0:
+            letter_space = 47.0
+        else:
+            letter_size = 20.0
+            letter_space = 25.0
+            
+        self.LETTER_SIZE = letter_size
+        self.LETTER_SPACE = letter_space
+
         
         success = False
         self.is_running = True
@@ -264,7 +282,7 @@ class WriteTask:
             pos_pen_drop  = posx([323.75, -171.5, 170, 0.0, 180.0, 0.0])
 
             # 🌟 디지털 출력 대신 라이브러리로 그리퍼 열기 (100mm 너비로 열기, 힘 40N, 대기)
-            self.gripper.move(self.t_index, twidth=100.0, tforce=40.0, fwait=True)
+            self.gripper.move(self.t_index, twidth=50.0, tforce=40.0, fwait=True)
             
             # 2. 붓펜 잡으러 가기
             logger.info("픽업 위치로 이동 중...")
@@ -749,8 +767,12 @@ class RobotControlNode(Node):
         self.task_queue = [] 
 
     def write_cmd_cb(self, msg):
-        self.get_logger().info(f"[명령 수신] 글쓰기: {msg.data}")
-        self.task_queue.append(('write', msg.data))
+        self.get_logger().info(f"[명령 수신] 글쓰기 데이터 수신")
+        try:
+            data = json.loads(msg.data)
+        except Exception:
+            data = {"text": msg.data, "size": 20.0}
+        self.task_queue.append(('write', data))
 
     def braille_cmd_cb(self, msg):
         self.get_logger().info("[명령 수신] 점자 타각")
@@ -845,7 +867,7 @@ def main(args=None):
         movej_vel=200.0, movej_acc=200.0,
         move_vel=100.0,  move_acc=100.0,
         z_vel=20.0,      z_acc=20.0, # 찍기 강도 영향있음 테스트 필요!!!!
-        punch_force=15.0, char_offset=5.5
+        punch_force=20.0, char_offset=5.5
     )
     my_stamper = StampTask(
         move_vel=150.0, move_acc=150.0,

@@ -1,3 +1,4 @@
+import json
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32MultiArray, Bool
@@ -31,6 +32,7 @@ class MasterNode(Node):
         self.is_working = False
         self.current_exec_id = None
         self.current_text = ""
+        self.font_size = 20
         self.flat_bits = []
         
         self.waiting_for_write = False
@@ -111,8 +113,8 @@ class MasterNode(Node):
                 self.is_working = True
                 self.current_exec_id = task[0]
                 self.current_text = task[2]
-                self.font_size = task[3]
-                
+                self.font_size = int(task[3])
+
                 self.get_logger().info("=" * 60)
                 self.get_logger().info(f"[DB 작업 감지] ID: {self.current_exec_id}, 텍스트: '{self.current_text}', 폰트 사이즈: '{self.font_size}'")
                 self.get_logger().info("=" * 60)
@@ -155,7 +157,10 @@ class MasterNode(Node):
                 
                 # 3. 점자가 끝나면 글쓰기 제어 노드로 명령 토픽 발행
                 msg_write = String()
-                msg_write.data = self.current_text
+                payload = {"text": self.current_text, "size": self.font_size}
+                msg_write.data = json.dumps(payload)
+
+
                 self.waiting_for_write = True
                 self.write_cmd_pub.publish(msg_write)
                 self.get_logger().info("글쓰기 명령 토픽(/write_cmd) 발행 완료")
