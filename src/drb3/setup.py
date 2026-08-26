@@ -36,7 +36,8 @@ setup(
             'braille = drb3.braille_node:main',
             'control = drb3.robot_control:main',
             'flip = drb3.flip_test:main',
-            'dozang = drb3.dozang:main'
+            'dozang = drb3.dozang:main',
+            'master_DB=drb3.master_node_DB:main'
 
         ],
     },
