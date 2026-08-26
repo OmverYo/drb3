@@ -205,8 +205,6 @@ class WriteTask:
         self.DRAW_ACC = draw_acc
         self.Z_VEL = z_vel
         self.Z_ACC = z_acc
-        '''self.LETTER_SIZE = letter_size
-        self.LETTER_SPACE = letter_space'''
         self.EPS = 1e-3
         self.pen_state = "down"
         
@@ -853,8 +851,7 @@ def main(args=None):
     my_writer = WriteTask(
         movej_vel=200.0, movej_acc=200.0,
         draw_vel=200.0,  draw_acc=200.0,
-        z_vel=50.0,     z_acc=50.0,
-        letter_size=20.0, letter_space=25.0
+        z_vel=50.0,     z_acc=50.0
     )
     
     my_flipper = FlipTask(
