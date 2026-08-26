@@ -259,9 +259,9 @@ class WriteTask:
             Q1 = posj([13.2, -5.7, 96.5, 0.0, 90.0, 13.4])
             
             # 1. 좌표 정의
-            pos_pen_above = posx([347.04, -181.77, 250.0, 0.0, 180.0, 0.0])
-            pos_pen_pick  = posx([347.04, -181.77, 152.8, 0.0, 180.0, 0.0])
-            pos_pen_drop  = posx([347.04, -181.77, 162.8, 0.0, 180.0, 0.0])
+            pos_pen_above = posx([323.75, -171.5, 250.0, 0.0, 180.0, 0.0])
+            pos_pen_pick  = posx([323.75, -171.5, 152, 0.0, 180.0, 0.0])
+            pos_pen_drop  = posx([323.75, -171.5, 170, 0.0, 180.0, 0.0])
 
             # 🌟 디지털 출력 대신 라이브러리로 그리퍼 열기 (100mm 너비로 열기, 힘 40N, 대기)
             self.gripper.move(self.t_index, twidth=100.0, tforce=40.0, fwait=True)
@@ -290,7 +290,7 @@ class WriteTask:
             target_x, target_y = text_start[0], text_start[1]
     
             pos_write_above = posx([target_x, target_y, 250.0, 0.0, 180.0, 0.0])
-            pos_write_start = posx([target_x, target_y, 211.5, 0.0, 180.0, 0.0])
+            pos_write_start = posx([target_x, target_y, 213.5, 0.0, 180.0, 0.0])
             
             logger.info(f"글쓰기 위치로 이동 중 (X: {target_x:.2f}, Y: {target_y:.2f})")
             movel(pos_write_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
@@ -449,9 +449,6 @@ class FlipTask:
 # ==========================================
 # [4] 점자 타각 작업
 # ==========================================
-# ==========================================
-# [4] 점자 타각 작업
-# ==========================================
 class BrailleTask:
     def __init__(self, movej_vel=200.0, movej_acc=200.0, move_vel=150.0, move_acc=150.0, z_vel=200.0, z_acc=200.0, punch_force=15.0, char_offset=10.0):
         self.MOVEJ_VEL = movej_vel
@@ -476,9 +473,9 @@ class BrailleTask:
             Q1 = posj([0.0, 25.0, 55.0, 0.0, 100.0, 0.0])
             
             # 1. 점자 툴(이쑤시개) 거치대 관련 좌표 정의 (self 적용)
-            self.pos_tool_above = posx([494.0, -183.5, 242.5, 0.0, 180.0, 0.0])
-            self.pos_tool_pick  = posx([494.0, -183.5, 95.0,  0.0, 180.0, 0.0])
-            self.pos_tool_drop  = posx([494.0, -183.5, 105.0, 0.0, 180.0, 0.0])
+            self.pos_tool_above = posx([494.0, -184.5, 242.5, 0.0, 180.0, 0.0])
+            self.pos_tool_pick  = posx([494.0, -184.5, 95.0,  0.0, 180.0, 0.0])
+            self.pos_tool_drop  = posx([494.0, -184.5, 105.0, 0.0, 180.0, 0.0])
 
             set_digital_output(1, 0); set_digital_output(2, 1) # 오픈
             
