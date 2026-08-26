@@ -259,9 +259,9 @@ class WriteTask:
             Q1 = posj([13.2, -5.7, 96.5, 0.0, 90.0, 13.4])
             
             # 1. 좌표 정의
-            pos_pen_above = posx([347.0, -185.0, 250.0, 0.0, 180.0, 0.0])
-            pos_pen_pick  = posx([347.0, -185.0, 150.0, 0.0, 180.0, 0.0])
-            pos_pen_drop  = posx([347.0, -185.0, 160.0, 0.0, 180.0, 0.0])
+            pos_pen_above = posx([347.04, -181.77, 250.0, 0.0, 180.0, 0.0])
+            pos_pen_pick  = posx([347.04, -181.77, 152.8, 0.0, 180.0, 0.0])
+            pos_pen_drop  = posx([347.04, -181.77, 162.8, 0.0, 180.0, 0.0])
 
             # 🌟 디지털 출력 대신 라이브러리로 그리퍼 열기 (100mm 너비로 열기, 힘 40N, 대기)
             self.gripper.move(self.t_index, twidth=100.0, tforce=40.0, fwait=True)
@@ -290,7 +290,7 @@ class WriteTask:
             target_x, target_y = text_start[0], text_start[1]
     
             pos_write_above = posx([target_x, target_y, 250.0, 0.0, 180.0, 0.0])
-            pos_write_start = posx([target_x, target_y, 209.0, 0.0, 180.0, 0.0])
+            pos_write_start = posx([target_x, target_y, 211.5, 0.0, 180.0, 0.0])
             
             logger.info(f"글쓰기 위치로 이동 중 (X: {target_x:.2f}, Y: {target_y:.2f})")
             movel(pos_write_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
@@ -514,7 +514,7 @@ class BrailleTask:
                 # 현재 위치(Z=242.5)를 안전 위치로 저장
                 safe_pos = get_current_posx(ref=DR_BASE)[0]
                 try:
-                    movel(posx([0.0, 0.0, 30.5, 0.0, 0.0, 0.0]), vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_TOOL)
+                    movel(posx([0.0, 0.0, 30.5, 0.0, 0.0, 0.0]), vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
                     set_ref_coord(DR_TOOL)
                     # print("툴 좌표계 설정 및 순응 제어 켜기")
                     task_compliance_ctrl([3000.0, 3000.0, 1000.0, 200.0, 200.0, 200.0], time=0.2)
