@@ -151,8 +151,8 @@ def initialize_database():
         CREATE TABLE IF NOT EXISTS tasks (
             exec_id BIGINT NOT NULL,
             user_id VARCHAR(10) NOT NULL,
-            text VARCHAR(10) NOT NULL,
-            font_size INT NOT NULL DEFAULT 10,
+            text TEXT NOT NULL,
+            font_size INT NOT NULL,
             request_date DATE NOT NULL,
             translate_status INT NOT NULL DEFAULT 0,
 
@@ -177,7 +177,7 @@ def initialize_database():
             -- 한글과 공백만 허용
             -- 1~10자
             CONSTRAINT chk_exec_translations_text
-                CHECK (text ~ '^[가-힣 ]{1,10}$'),
+                CHECK (text ~ '^[가-힣 ]{1,50}$'),
 
             -- 번역 상태: 정수형, 기본값 0
             CONSTRAINT chk_exec_translations_status
@@ -185,27 +185,12 @@ def initialize_database():
         )
     """)
 
-    # 기존 DB가 이미 생성되어 있는 경우에도 text 제약조건을
-    # "한글 + 공백, 1~10자" 기준으로 맞춘다.
+    # 기존 DB에서도 text / font_size에 별도의 입력 제한을 두지 않는다.
     cur.execute("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_exec_translations_text")
-    cur.execute("""
-        ALTER TABLE tasks
-        ADD CONSTRAINT chk_exec_translations_text
-        CHECK (text ~ '^[가-힣 ]{1,10}$')
-    """)
-
-    # 기존 DB에도 font_size 컬럼을 적용한다.
-    # 기존 작업은 기본 폰트 크기 10으로 보정한다.
-    cur.execute("""
-        ALTER TABLE tasks
-        ADD COLUMN IF NOT EXISTS font_size INT NOT NULL DEFAULT 10
-    """)
     cur.execute("ALTER TABLE tasks DROP CONSTRAINT IF EXISTS chk_exec_translations_font_size")
-    cur.execute("""
-        ALTER TABLE tasks
-        ADD CONSTRAINT chk_exec_translations_font_size
-        CHECK (font_size IN (5, 10, 15))
-    """)
+    cur.execute("ALTER TABLE tasks ALTER COLUMN text TYPE TEXT")
+    cur.execute("ALTER TABLE tasks ALTER COLUMN font_size DROP DEFAULT")
+    cur.execute("ALTER TABLE tasks ALTER COLUMN font_size SET NOT NULL")
 
     # 기존 DB에도 translate_status 컬럼을 적용한다.
     cur.execute("ALTER TABLE tasks DROP COLUMN IF EXISTS translate_result")
@@ -561,18 +546,8 @@ def translate(content, user_id):
         except ValueError:
             return make_response("번역", "FAIL|폰트 크기 형식 오류")
 
-        if font_size not in (5, 10, 15):
-            return make_response("번역", "FAIL|지원하지 않는 폰트 크기입니다")
-
         if not text:
             return make_response("번역", "FAIL|번역할 내용을 입력하세요")
-
-        max_length = {5: 15, 10: 10, 15: 5}[font_size]
-        if not (1 <= len(text) <= max_length):
-            return make_response(
-                "번역",
-                f"FAIL|폰트 크기 {font_size}에서는 최대 {max_length}자까지 입력할 수 있습니다"
-            )
 
         if any(not ("가" <= char <= "힣") and char != " " for char in text):
             return make_response("번역", "FAIL|번역 내용은 한글과 공백만 입력할 수 있습니다")
@@ -584,17 +559,19 @@ def translate(content, user_id):
         b = KorToBraille() #점자 번역 객체
         text_b = b.korTranslate(text_k) #점자 번역 수행
         result = text_b # 화면상 점자 출력은 반전 없이
-        text_b_reverse = reverse_braille(text_b) #점자 반전 수행
-        bit_b = braille_text_to_bits(text_b_reverse) # 유니코드 점자 bit 화
+        #어차피 로봇 내부에서 점자 번역 수행하므로 굳이 반전 및 bit 화까지는 진행 x
+        #text_b_reverse = reverse_braille(text_b) #점자 반전 수행
+        #bit_b = braille_text_to_bits(text_b_reverse) # 유니코드 점자 bit 화
     
-        #원래는 맨 끝 eol 문자였으나, 반전으로 앞으로 왔으니 날려줌.
-        if bit_b[0] == [0, 0, 0, 0, 0, 0]:
-            bit_b.pop(0)
+        ##원래는 맨 끝 eol 문자였으나, 반전으로 앞으로 왔으니 날려줌.
+        #if bit_b[0] == [0, 0, 0, 0, 0, 0]:
+        #    bit_b.pop(0)
 
         #########
         '''
         여기서 로봇 동작 시키고
         결과까지 리턴 받아야 함(성공/실패 여부) <- 논의 후 구현 여부 결정.
+        -> 서버에서 로봇 동장시키지 않고, DB 상태 값을 이용하는 방식으로 결정
         '''
         #########
 
@@ -706,6 +683,89 @@ def request_task(exec_id):
             cur.close()
         if conn:
             conn.close()
+
+
+# ============================================================
+# 사용자 작업내역 조회
+# ============================================================
+
+def get_user_tasks(user_id, page=1):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM tasks WHERE user_id = %s", (user_id,))
+        total_rows = cur.fetchone()[0]
+        total_pages = max(1, (total_rows + TASKS_PAGE_SIZE - 1) // TASKS_PAGE_SIZE)
+        page = max(1, min(page, total_pages))
+        offset = (page - 1) * TASKS_PAGE_SIZE
+        cur.execute("""
+            SELECT exec_id, text, font_size, request_date, translate_status
+            FROM tasks
+            WHERE user_id = %s
+            ORDER BY exec_id ASC
+            LIMIT %s OFFSET %s
+        """, (user_id, TASKS_PAGE_SIZE, offset))
+        rows = cur.fetchall()
+        content = ";;".join("|".join(str(v) for v in row) for row in rows)
+        write_log(f"상태 조회 - ID={user_id}, page={page}, 작업수={len(rows)}")
+        return True, f"{total_pages}|{content}"
+    except Exception as e:
+        write_log(f"상태 조회 실패 - ID={user_id}, 오류={e}")
+        return False, f"DB 오류: {e}"
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
+
+
+# ============================================================
+# 작업 거절
+# ============================================================
+
+def reject_task(exec_id):
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT translate_status
+            FROM tasks
+            WHERE exec_id = %s
+            FOR UPDATE
+        """, (exec_id,))
+        row = cur.fetchone()
+
+        if row is None:
+            conn.rollback()
+            return False, "선택한 작업을 찾을 수 없습니다."
+
+        if row[0] != 0:
+            conn.rollback()
+            return False, "상태가 0 인 작업을 선택해 주세요"
+
+        cur.execute("""
+            UPDATE tasks
+            SET translate_status = 2
+            WHERE exec_id = %s AND translate_status = 0
+        """, (exec_id,))
+
+        if cur.rowcount != 1:
+            conn.rollback()
+            return False, "상태가 0 인 작업을 선택해 주세요"
+
+        conn.commit()
+        write_log(f"작업 거절 - exec_id={exec_id}, status=0 -> 2")
+        return True, f"exec_id {exec_id} 의 작업을 거절하였습니다."
+
+    except Exception as e:
+        if conn: conn.rollback()
+        write_log(f"작업 거절 실패 - exec_id={exec_id}, 오류={e}")
+        return False, f"작업 거절 중 오류가 발생했습니다: {e}"
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
 
 
 # ============================================================
@@ -874,6 +934,38 @@ def handle_client(client_socket, client_address):
                 client_socket.sendall(
                     response.encode("utf-8")
                 )
+
+            # ------------------------------------------------
+            # 상태 조회
+            # ------------------------------------------------
+
+            elif action == "상태조회":
+
+                if current_user is None:
+                    response = make_response(
+                        "상태조회",
+                        "FAIL|로그인이 필요합니다"
+                    )
+                else:
+                    parts = content.split("|", 1)
+                    requested_user = parts[0].strip()
+                    try:
+                        page = int(parts[1]) if len(parts) == 2 else 1
+                    except ValueError:
+                        page = 1
+                    if requested_user != current_user:
+                        response = make_response(
+                            "상태조회",
+                            "FAIL|현재 로그인 사용자만 조회할 수 있습니다"
+                        )
+                    else:
+                        success, result = get_user_tasks(current_user, page)
+                        response = make_response(
+                            "상태조회",
+                            f"OK|{result}" if success else f"FAIL|{result}"
+                        )
+
+                client_socket.sendall(response.encode("utf-8"))
 
             # ------------------------------------------------
             # 로그아웃
@@ -1049,14 +1141,29 @@ root.geometry("700x550")
 # 서버 IP
 local_ip = get_local_ip()
 
-title_label = tk.Label(
-    root,
-    text="Translation Server",
-    font=("Arial", 20, "bold")
+top_header = tk.Frame(root)
+top_header.pack(fill="x", padx=10, pady=(10, 5))
+
+date_label = tk.Label(
+    top_header,
+    text=datetime.now().strftime("%Y-%m-%d"),
+    font=("Arial", 13, "bold")
 )
+date_label.place(relx=0.5, rely=0.5, anchor="center")
 
-title_label.pack(pady=10)
+# 로그인 사용자 표기를 날짜칸 오른쪽 끝에 배치
+status_label = tk.Label(
+    top_header,
+    text="로그인 사용자 : 0 / 5",
+    font=("Arial", 12)
+)
+status_label.pack(side="right", anchor="e")
 
+def update_server_date():
+    date_label.config(text=datetime.now().strftime("%Y-%m-%d"))
+    root.after(1000, update_server_date)
+
+update_server_date()
 
 ip_label = tk.Label(
     root,
@@ -1091,15 +1198,7 @@ server_button.pack(pady=15)
 
 
 # 현재 로그인 인원
-status_label = tk.Label(
-    root,
-    text="로그인 사용자 : 0 / 5",
-    font=("Arial", 12)
-)
-
-status_label.pack()
-
-
+# 로그인 사용자 표기는 상단 날짜칸 오른쪽 끝으로 이동됨.
 def update_status():
 
     with state_lock:
@@ -1175,13 +1274,51 @@ def on_task_request():
         refresh_tasks_table()
         messagebox.showwarning("작업 요청", message)
 
+tasks_button_frame = tk.Frame(tasks_header_frame)
+tasks_button_frame.pack(side="right", anchor="e")
+
 tasks_request_button = tk.Button(
-    tasks_header_frame,
+    tasks_button_frame,
     text="작업 요청",
     font=("Arial", 10, "bold"),
     command=on_task_request
 )
-tasks_request_button.pack(side="right", anchor="e")
+tasks_request_button.pack(side="left", padx=(0, 5))
+
+def on_task_reject():
+    selected_items = tasks_table.selection()
+
+    if not selected_items:
+        messagebox.showwarning("작업 거절", "작업을 선택해 주세요")
+        return
+
+    values = tasks_table.item(selected_items[0], "values")
+    exec_id = values[0]
+    status = int(values[5])
+
+    if status != 0:
+        messagebox.showwarning(
+            "작업 거절",
+            "상태가 0 인 작업을 선택해 주세요"
+        )
+        return
+
+    success, message = reject_task(exec_id)
+
+    if success:
+        refresh_tasks_table()
+        messagebox.showinfo("작업 거절", message)
+    else:
+        refresh_tasks_table()
+        messagebox.showwarning("작업 거절", message)
+
+tasks_reject_button = tk.Button(
+    tasks_button_frame,
+    text="작업 거절",
+    font=("Arial", 10, "bold"),
+    command=on_task_reject
+)
+tasks_reject_button.pack(side="left")
 
 tasks_frame = tk.Frame(root)
 tasks_frame.pack(padx=10, pady=3, fill="both", expand=True)

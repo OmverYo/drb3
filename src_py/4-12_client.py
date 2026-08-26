@@ -2,7 +2,7 @@ import socket
 import threading
 import queue
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 from datetime import datetime
 
 
@@ -16,6 +16,7 @@ sock = None
 connected = False
 logged_in = False
 current_user = None
+current_user_name = None
 response_queue = queue.Queue()
 
 
@@ -161,17 +162,33 @@ def clear_screen():
         widget.destroy()
 
 
-def create_date_header():
+def create_date_header(logout_command=None):
+
+    header = tk.Frame(root)
+    header.pack(fill="x", padx=10, pady=(10, 5))
 
     date_label = tk.Label(
-        root,
+        header,
         text="",
         font=("Arial", 13, "bold")
     )
+    date_label.place(relx=0.5, rely=0.5, anchor="center")
 
-    date_label.pack(
-        pady=(10, 5)
-    )
+    if logout_command is not None:
+        logout_frame = tk.Frame(header)
+        logout_frame.pack(side="right")
+        tk.Button(
+            logout_frame,
+            text="로그아웃",
+            width=10,
+            command=logout_command
+        ).pack()
+        if current_user_name:
+            tk.Label(
+                logout_frame,
+                text=f"사용자 : {current_user_name}",
+                font=("Arial", 10)
+            ).pack(pady=(2, 0))
 
     update_date(date_label)
 
@@ -367,6 +384,7 @@ def show_login_screen():
 
         global logged_in
         global current_user
+        global current_user_name
 
         user_id = id_entry.get()
         password = pw_entry.get()
@@ -397,6 +415,7 @@ def show_login_screen():
             parts = content.split("|")
 
             current_user = parts[1]
+            current_user_name = parts[2] if len(parts) > 2 else current_user
 
             logged_in = True
 
@@ -456,6 +475,7 @@ def show_login_screen():
         connected = False
         logged_in = False
         current_user = None
+        current_user_name = None
 
         # 접속 해제 후 이전 페이지(서버 접속 화면)로 이동
         show_connect_screen()
@@ -659,26 +679,6 @@ def show_signup_screen():
 
     back_button.pack()
 
-
-# ============================================================
-# 한글 검사
-# ============================================================
-
-def is_korean_only(text):
-
-    for char in text:
-
-        if char in " \t\n":
-            continue
-
-        if not (
-            "가" <= char <= "힣"
-        ):
-            return False
-
-    return True
-
-
 # ============================================================
 # 작업 화면
 # ============================================================
@@ -687,346 +687,177 @@ def show_work_screen():
 
     clear_screen()
 
-    create_date_header()
-
-    title = tk.Label(
-        root,
-        text="번역 작업",
-        font=("Arial", 22, "bold")
-    )
-
-    title.pack(pady=15)
-
-
-    # 현재 사용자
-    user_label = tk.Label(
-        root,
-        text=f"사용자 : {current_user}",
-        font=("Arial", 12)
-    )
-
-    user_label.pack()
-
-
-    # 폰트 크기
-    font_frame = tk.Frame(root)
-
-    font_frame.pack(
-        pady=10
-    )
-
-    tk.Label(
-        font_frame,
-        text="폰트 크기 : "
-    ).pack(side="left")
-
-
-    font_size = tk.IntVar(
-        value=10
-    )
-
-
-    # 언어 제한
-    language_label = tk.Label(
-        root,
-        text="언어 제한 : 한글",
-        font=("Arial", 11)
-    )
-
-    language_label.pack()
-
-
-    # 크기에 따른 글자 제한
-    limit_label = tk.Label(
-        root,
-        text="글자수 제한 : 10자",
-        font=("Arial", 11)
-    )
-
-    limit_label.pack()
-
-
-    # Text 위젯은 폰트 크기에 따라 실제 픽셀 크기가 변하므로
-    # 고정 크기 Frame 안에 배치하여 입력/출력 영역의 크기를 일정하게 유지한다.
-    input_frame = tk.Frame(root, width=520, height=150)
-    input_frame.pack(padx=20, pady=10)
-    input_frame.pack_propagate(False)
-
-    input_text = tk.Text(
-        input_frame,
-        font=("Arial", 15),
-        wrap="word"
-    )
-
-    input_text.pack(
-        fill="both",
-        expand=True
-    )
-
-
-    result_label = tk.Label(
-        root,
-        text="번역 결과",
-        font=("Arial", 12, "bold")
-    )
-
-    result_label.pack(
-        pady=(10, 3)
-    )
-
-
-    result_frame = tk.Frame(root, width=520, height=150)
-    result_frame.pack(padx=20, pady=5)
-    result_frame.pack_propagate(False)
-
-    result_text = tk.Text(
-        result_frame,
-        font=("Arial", 15),
-        state="disabled",
-        wrap="word"
-    )
-
-    result_text.pack(
-        fill="both",
-        expand=True
-    )
-
-
-    # --------------------------------------------------------
-    # 폰트 변경
-    # --------------------------------------------------------
-
-    def change_font():
-
-        size = font_size.get()
-
-        # 선택한 폰트 크기는 글자 수 제한에만 사용하고,
-        # 입출력 영역의 글자 크기는 항상 15로 고정한다.
-        input_text.config(
-            font=("Arial", 15)
-        )
-        result_text.config(
-            font=("Arial", 15)
-        )
-
-        if size == 5:
-            limit = 15
-
-        elif size == 10:
-            limit = 10
-
-        else:
-            limit = 5
-
-        limit_label.config(
-            text=f"글자수 제한 : {limit}자"
-        )
-
-
-    for size in [5, 10, 15]:
-
-        tk.Radiobutton(
-            font_frame,
-            text=str(size),
-            variable=font_size,
-            value=size,
-            command=change_font
-        ).pack(
-            side="left",
-            padx=5
-        )
-
-
-    # --------------------------------------------------------
-    # 글자 입력 제한
-    # --------------------------------------------------------
-
-    def validate_input(event=None):
-
-        size = font_size.get()
-
-        if size == 5:
-            max_length = 15
-
-        elif size == 10:
-            max_length = 10
-
-        else:
-            max_length = 5
-
-        text = input_text.get(
-            "1.0",
-            "end-1c"
-        )
-
-        # 한글 검사
-        if not is_korean_only(text):
-
-            # 한글이 아닌 입력 제거.
-            # 엔터(\n), 캐리지리턴(\r)은 입력값에서 무시한다.
-            filtered = ""
-
-            for char in text:
-
-                if (
-                    "가" <= char <= "힣"
-                    or char in " \t"
-                ):
-                    filtered += char
-
-            input_text.delete(
-                "1.0",
-                tk.END
-            )
-
-            input_text.insert(
-                "1.0",
-                filtered
-            )
-
-            text = filtered
-
-
-        # 글자 수 제한
-        if len(text) > max_length:
-
-            input_text.delete(
-                "1.0",
-                tk.END
-            )
-
-            input_text.insert(
-                "1.0",
-                text[:max_length]
-            )
-
-        return "break"
-
-
-    # KeyRelease 방식
-    input_text.bind(
-        "<KeyRelease>",
-        validate_input
-    )
-
-    # 엔터 입력은 무시한다.
-    input_text.bind(
-        "<Return>",
-        lambda event: "break"
-    )
-
-
-    # --------------------------------------------------------
-    # 번역
-    # --------------------------------------------------------
-
-    def translate():
-
-        text = input_text.get(
-            "1.0",
-            "end-1c"
-        ).strip()
-
-        if not text:
-
-            messagebox.showwarning(
-                "입력 오류",
-                "번역할 한글을 입력하세요."
-            )
-
-            return
-
-        response = send_request(
-            "번역",
-            f"{text}|{font_size.get()}"
-        )
-
-        action, content = parse_response(
-            response
-        )
-
-        if action != "번역":
-            return
-
-        result_text.config(
-            state="normal"
-        )
-
-        result_text.delete(
-            "1.0",
-            tk.END
-        )
-
-        if content.startswith("OK|"):
-
-            result = content[3:]
-
-            result_text.insert(
-                "1.0",
-                result
-            )
-
-        else:
-
-            result_text.insert(
-                "1.0",
-                content.replace(
-                    "FAIL|",
-                    ""
-                )
-            )
-
-        result_text.config(
-            state="disabled"
-        )
-
-
-    translate_button = tk.Button(
-        root,
-        text="번역",
-        width=20,
-        font=("Arial", 13),
-        command=translate
-    )
-
-    translate_button.pack(
-        pady=10
-    )
-
-
-    # --------------------------------------------------------
-    # 로그아웃
-    # --------------------------------------------------------
-
     def logout():
-
         global logged_in
         global current_user
+        global current_user_name
 
         if current_user:
-
-            send_request(
-                "로그아웃",
-                current_user
-            )
+            send_request("로그아웃", current_user)
 
         logged_in = False
         current_user = None
-
+        current_user_name = None
         show_login_screen()
 
+    create_date_header(logout)
 
-    logout_button = tk.Button(
-        root,
-        text="로그아웃",
-        width=20,
-        command=logout
-    )
 
-    logout_button.pack(
-        pady=5
-    )
+    font_frame = tk.Frame(root)
+    font_frame.pack(pady=5)
+    tk.Label(font_frame, text="폰트 크기 : ").pack(side="left")
+    font_sizes = [15, 20, 40]
+    input_limits = [15, 10, 5]
+    font_size = tk.IntVar(value=font_sizes[0])
 
+    restriction_frame = tk.Frame(root)
+    restriction_frame.pack(pady=2)
+    language_label = tk.Label(restriction_frame, text="언어 제한 : 한글", font=("Arial", 11))
+    language_label.pack(side="left", padx=8)
+    limit_label = tk.Label(restriction_frame, text=f"글자수 제한 : {input_limits[0]}자", font=("Arial", 11))
+    limit_label.pack(side="left", padx=8)
+
+    # 입력/출력 칸의 높이를 기존 150의 1/3인 50으로 고정
+    input_label = tk.Label(root, text="번역할 내용", font=("Arial", 12, "bold"))
+    input_label.pack(pady=(3, 1))
+
+    input_frame = tk.Frame(root, width=520, height=50)
+    input_frame.pack(padx=20, pady=5)
+    input_frame.pack_propagate(False)
+    input_text = tk.Text(input_frame, font=("Arial", 15), wrap="word")
+    input_text.pack(fill="both", expand=True)
+
+    result_label = tk.Label(root, text="번역 결과", font=("Arial", 12, "bold"))
+    result_label.pack(pady=(3, 1))
+
+    result_frame = tk.Frame(root, width=520, height=50)
+    result_frame.pack(padx=20, pady=3)
+    result_frame.pack_propagate(False)
+    result_text = tk.Text(result_frame, font=("Arial", 15), state="disabled", wrap="word")
+    result_text.pack(fill="both", expand=True)
+
+    def change_font():
+        size = font_size.get()
+        index = font_sizes.index(size)
+
+        # 폰트 크기 변경 시 입력 내용과 번역 결과 초기화
+        input_text.delete("1.0", tk.END)
+
+        result_text.config(state="normal")
+        result_text.delete("1.0", tk.END)
+        result_text.config(state="disabled")
+
+        # 입력 칸의 변경된 폰트 크기는 적용안하고 15로 고정
+        input_text.config(font=("Arial", 15))
+        result_text.config(font=("Arial", 15))
+
+        # 변경된 폰트 크기에 맞는 글자 수 제한 표시
+        limit_label.config(text=f"글자수 제한 : {input_limits[index]}자")
+
+    for size in font_sizes:
+        tk.Radiobutton(
+            font_frame, text=str(size), variable=font_size,
+            value=size, command=change_font
+        ).pack(side="left", padx=5)
+
+    def validate_input(event=None):
+        index = font_sizes.index(font_size.get())
+        max_length = input_limits[index]
+        text = input_text.get("1.0", "end-1c")
+        filtered = "".join(
+            ch for ch in text if ("가" <= ch <= "힣") or ch in " \t"
+        )
+        if filtered != text:
+            input_text.delete("1.0", tk.END)
+            input_text.insert("1.0", filtered)
+            text = filtered
+        if len(text) > max_length:
+            input_text.delete("1.0", tk.END)
+            input_text.insert("1.0", text[:max_length])
+        return "break"
+
+    input_text.bind("<KeyRelease>", validate_input)
+    input_text.bind("<Return>", lambda event: "break")
+
+    def translate():
+        text = input_text.get("1.0", "end-1c").strip()
+        if not text:
+            messagebox.showwarning("입력 오류", "번역할 한글을 입력하세요.")
+            return
+        response = send_request("번역", f"{text}|{font_size.get()}")
+        action, content = parse_response(response)
+        if action != "번역":
+            return
+        result_text.config(state="normal")
+        result_text.delete("1.0", tk.END)
+        result_text.insert("1.0", content[3:] if content.startswith("OK|") else content.replace("FAIL|", ""))
+        result_text.config(state="disabled")
+
+    tk.Button(root, text="번역", width=20, font=("Arial", 13), command=translate).pack(pady=5)
+
+    # 상태 조회 결과
+    tk.Label(root, text="상태 조회 결과", font=("Arial", 12, "bold")).pack(pady=(3, 1))
+
+    status_header = tk.Frame(root, width=520)
+    status_header.pack(fill="x", padx=20, pady=(0, 2))
+    status_page_frame = tk.Frame(status_header)
+    status_page_frame.pack(side="left")
+    tk.Label(status_page_frame, text="Page:", font=("Arial", 10)).pack(side="left", padx=(0, 5))
+    status_page_combo = ttk.Combobox(status_page_frame, state="readonly", width=6)
+    status_page_combo.pack(side="left")
+    status_total_pages = tk.Label(status_page_frame, text="총 1 페이지", font=("Arial", 10))
+    status_total_pages.pack(side="left", padx=8)
+
+    status_frame = tk.Frame(root, width=520, height=120)
+    status_frame.pack(padx=20, pady=2)
+    status_frame.pack_propagate(False)
+    status_columns = ("exec_id", "text", "font_size", "request_date", "status")
+    status_table = ttk.Treeview(status_frame, columns=status_columns, show="headings", height=5)
+    titles = {"exec_id":"exec_id", "text":"text", "font_size":"font_size", "request_date":"request_date", "status":"status"}
+    widths = {"exec_id":70, "text":220, "font_size":80, "request_date":110, "status":70}
+    for col in status_columns:
+        status_table.heading(col, text=titles[col])
+        status_table.column(col, width=widths[col], minwidth=widths[col], anchor="center")
+    status_scroll = ttk.Scrollbar(status_frame, orient="vertical", command=status_table.yview)
+    status_table.configure(yscrollcommand=status_scroll.set)
+    status_table.pack(side="left", fill="both", expand=True)
+    status_scroll.pack(side="right", fill="y")
+
+    def query_status(event=None):
+        try:
+            page = int(status_page_combo.get() or "1")
+        except ValueError:
+            page = 1
+        response = send_request("상태조회", f"{current_user}|{page}")
+        action, content = parse_response(response)
+        if action != "상태조회":
+            return
+        for item in status_table.get_children():
+            status_table.delete(item)
+        if content.startswith("OK|"):
+            data = content[3:]
+            parts = data.split("|", 1)
+            if len(parts) == 2:
+                try:
+                    total_pages = int(parts[0])
+                except ValueError:
+                    total_pages = 1
+                total_pages = max(1, total_pages)
+                status_page_combo["values"] = [str(i) for i in range(1, total_pages + 1)]
+                page = min(max(1, page), total_pages)
+                status_page_combo.set(str(page))
+                status_total_pages.config(text=f"총 {total_pages} 페이지")
+                rows = parts[1]
+                if rows:
+                    for row in rows.split(";;"):
+                        values = row.split("|")
+                        if len(values) == 5:
+                            status_table.insert("", tk.END, values=values)
+        else:
+            messagebox.showwarning("상태 조회", content.replace("FAIL|", ""))
+
+    status_page_combo.bind("<<ComboboxSelected>>", query_status)
+    tk.Button(root, text="상태 조회", width=20, font=("Arial", 13), command=query_status).pack(pady=3)
 
 # ============================================================
 # 프로그램 종료
@@ -1035,6 +866,7 @@ def show_work_screen():
 def on_close():
 
     global sock
+    global current_user_name
 
     if sock:
 
