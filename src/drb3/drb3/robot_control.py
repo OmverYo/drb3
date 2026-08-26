@@ -449,6 +449,9 @@ class FlipTask:
 # ==========================================
 # [4] 점자 타각 작업
 # ==========================================
+# ==========================================
+# [4] 점자 타각 작업
+# ==========================================
 class BrailleTask:
     def __init__(self, movej_vel=200.0, movej_acc=200.0, move_vel=150.0, move_acc=150.0, z_vel=200.0, z_acc=200.0, punch_force=15.0, char_offset=10.0):
         self.MOVEJ_VEL = movej_vel
@@ -465,31 +468,31 @@ class BrailleTask:
         from DSR_ROBOT2 import (movej, movel, set_digital_output, wait, 
                                 set_ref_coord, task_compliance_ctrl, set_desired_force, 
                                 release_force, release_compliance_ctrl, check_force_condition, get_current_posx,
-                                DR_TOOL, DR_BASE, DR_AXIS_Z, DR_MV_MOD_REL)
+                                DR_TOOL, DR_BASE, DR_AXIS_Z, DR_MV_MOD_REL, set_stiffnessx, get_tool_force)
         from DR_common2 import posx, posj
         
         success = False
         try:
             Q1 = posj([0.0, 25.0, 55.0, 0.0, 100.0, 0.0])
             
-            # 1. 점자 툴(이쑤시개) 거치대 관련 좌표 정의
-            pos_tool_above = posx([494.0, -183.5, 242.5, 0.0, 180.0, 0.0])
-            pos_tool_pick  = posx([494.0, -183.5, 95.0,  0.0, 180.0, 0.0])
-            pos_tool_drop  = posx([494.0, -183.5, 105.0, 0.0, 180.0, 0.0])
+            # 1. 점자 툴(이쑤시개) 거치대 관련 좌표 정의 (self 적용)
+            self.pos_tool_above = posx([494.0, -183.5, 242.5, 0.0, 180.0, 0.0])
+            self.pos_tool_pick  = posx([494.0, -183.5, 95.0,  0.0, 180.0, 0.0])
+            self.pos_tool_drop  = posx([494.0, -183.5, 105.0, 0.0, 180.0, 0.0])
 
             set_digital_output(1, 0); set_digital_output(2, 1) # 오픈
             
             # 2. 이쑤시개 잡으러 가기
             logger.info("점자 툴 픽업 위치로 이동 중...")
             # 홈(Q1)에서 안전 높이로 먼저 이동
-            movel(pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
-            movel(pos_tool_pick, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+            movel(self.pos_tool_pick, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
             set_digital_output(1, 1); set_digital_output(2, 0) # 클로즈 (이쑤시개 잡기)
             wait(1.0)
             
             # 잡은 후 안전 높이로 복귀
-            movel(pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+            movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
 
             # 3. 점자 타각 시작 위치 계산 및 이동
             num_chars = len(flat_bits) // 6
@@ -501,7 +504,7 @@ class BrailleTask:
             
             logger.info(f"점자 타각 시작 위치로 이동 중 (X: {target_x:.2f}, Y: {target_y:.2f})")
             movel(pos_braille_start, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
-            movel(posx([0.0, 0.0, 20.0, 0.0, 0.0, 0.0]), vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
+            movel(posx([0.0, 0.0, 40.5, 0.0, 0.0, 0.0]), vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
             logger.info("점자 타각 시작!")
 
             def move_rel(dx, dy, v=self.MOVE_VEL, a=self.MOVE_ACC):
@@ -511,31 +514,56 @@ class BrailleTask:
                 movel(posx([dx_rot, dy_rot, 0.0, 0.0, 0.0, 0.0]), vel=v, acc=a, ref=DR_TOOL, mod=DR_MV_MOD_REL)
 
             def punch_dot():
-                # 현재 위치(Z=242.5)를 안전 위치로 저장
                 safe_pos = get_current_posx(ref=DR_BASE)[0]
                 try:
-                    movel(posx([0.0, 0.0, 30.5, 0.0, 0.0, 0.0]), vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
+                    # 1. 컴플라이언스 켜기 (유연한 상태로 진입 준비)
                     set_ref_coord(DR_TOOL)
-                    # print("툴 좌표계 설정 및 순응 제어 켜기")
-                    task_compliance_ctrl([3000.0, 3000.0, 1000.0, 200.0, 200.0, 200.0], time=0.2)
-                    set_desired_force([0.0, 0.0, self.PUNCH_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], time=0.2, mod=0)
-                    if (check_force_condition(DR_AXIS_Z, min=1, ref=DR_TOOL)) == 0:
-                        print("찍기 성공!")
-                        release_force(time=0.2) #[cite: 5]
-                        release_compliance_ctrl() #[cite: 5]
-                        set_ref_coord(DR_BASE) #[cite: 5]
-                        movel(safe_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
-                    else :
-                        print("찍기 실패")
+                    task_compliance_ctrl()
+                    set_stiffnessx([3000.0, 3000.0, 500.0, 100.0, 100.0, 200.0])
+                    
+                    # 2. 컴플라이언스 켜진 상태로 하강 (충격 흡수)
+                    movel(posx([0.0, 0.0, 10.0, 0.0, 0.0, 0.0]), vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_TOOL, mod=DR_MV_MOD_REL)
+                    
+                    # 3. 목표 힘 인가
+                    set_desired_force([0.0, 0.0, self.PUNCH_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], mod=1)
+                    
+                    # 4. 힘 감지 루프 시작
+                    target_force = self.PUNCH_FORCE * 0.8
+                    force_check_count = 0
+                    start_time = time.time()
+                    
+                    while True:
+                        current_force = get_tool_force()
+                        force_check_count += 1
+                        
+                        if force_check_count % 10 == 0:
+                            print(f"[FORCE 점자] Fx={current_force[0]:.2f}, Fy={current_force[1]:.2f}, Fz={current_force[2]:.2f}")
+                            
+                        if not check_force_condition(DR_AXIS_Z, min=target_force, ref=DR_TOOL):
+                            print(f"[FORCE 점자] 타각 접촉 감지! Fz={current_force[2]:.2f}N")
+                            break
+                            
+                        if time.time() - start_time > 3.0:
+                            print("[ERROR] 점자 타각 타임아웃!")
+                            break
+                        time.sleep(0.05)
+                    
+                    wait(0.5)
+
                 finally:
-                        print("다음 점자")
+                    release_force(time=0.0)
+                    release_compliance_ctrl()
+                    set_ref_coord(DR_BASE)
+                    movel(safe_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                    print("--- 다음 점자로 이동 ---")
+
             for i in range(num_chars):
                 bits = flat_bits[i*6 : (i+1)*6]
                 char_cur_x, char_cur_y = 0.0, 0.0
                 
                 for j, val in enumerate(bits):
                     if val == 1:
-                        target_x_char, target_y_char = (j // 3) * 2.5, (j % 3) * 2.5  # 점자간 간격 * 뒤에 값으로 (기준 : mm)
+                        target_x_char, target_y_char = (j // 3) * 2.5, (j % 3) * 2.5 
                         dx, dy = target_x_char - char_cur_x, target_y_char - char_cur_y
                         move_rel(dx, dy)
                         punch_dot()
@@ -547,20 +575,18 @@ class BrailleTask:
             # 4. 점자 타각 완료 후 이쑤시개 반납
             logger.info("점자 타각 완료, 툴 반납 중...")
             
-            # 현재 위치에서 Z축만 안전 높이(242.5)로 수직 상승 (충돌 방지)
             curr_pos = get_current_posx(ref=DR_BASE)[0]
             curr_pos[2] = 242.5
             movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
-            # 반납 위치로 이동 후 내려놓기
-            movel(pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
-            movel(pos_tool_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+            # 반납 시에도 self 적용된 변수 사용
+            movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+            movel(self.pos_tool_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
             set_digital_output(1, 0); set_digital_output(2, 1) # 오픈 (이쑤시개 놓기)
             wait(1.0)
             
-            # 안전 높이로 복귀 후 홈 이동
-            movel(pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+            movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
             movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
             
             success = True
