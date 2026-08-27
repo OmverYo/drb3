@@ -100,6 +100,35 @@ def handle_server_disconnect_message(response):
     return True
 
 
+def handle_server_connection_lost(current_sock):
+    global sock
+    global connected
+    global logged_in
+    global current_user
+    global current_user_name
+
+    # 이미 다른 연결로 변경되었거나 사용자가 직접 접속을 해제한 경우 무시
+    if sock is not current_sock or not connected:
+        return
+
+    try:
+        current_sock.close()
+    except Exception:
+        pass
+
+    sock = None
+    connected = False
+    logged_in = False
+    current_user = None
+    current_user_name = None
+
+    def show_server_closed():
+        messagebox.showinfo("서버 종료", "서버가 종료되었습니다.")
+        show_connect_screen()
+
+    root.after(0, show_server_closed)
+
+
 def server_receiver():
     global sock
 
@@ -113,6 +142,7 @@ def server_receiver():
             data = current_sock.recv(4096)
 
             if not data:
+                handle_server_connection_lost(current_sock)
                 return
 
             response = data.decode("utf-8")
@@ -125,6 +155,7 @@ def server_receiver():
         except socket.timeout:
             continue
         except Exception:
+            handle_server_connection_lost(current_sock)
             return
 
 
