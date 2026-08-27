@@ -7,6 +7,7 @@ import time
 from drb3.device import Device
 from drb3.rg2 import RG
 import threading
+from drb3.hangul_engine import HangulEngine
 
 ROBOT_ID = "dsr01"
 ROBOT_MODEL = "m0609"
@@ -29,170 +30,7 @@ def initialize_robot():
     except Exception:
         pass
     
-    set_tool(ROBOT_TOOL)
-    set_tcp(ROBOT_TCP)
-    print("로봇 Tool/TCP 초기화 완료")
 
-
-# ==========================================
-# [1] 한글 동적 렌더링 엔진 (동일 유지)
-# ==========================================
-class HangulEngine:
-    # 초성, 중성, 종성 유니코드 리스트
-    CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
-    JUNG = ['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ']
-    JONG = ['','ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
-
-    # 모음 형태 분류 (V: 세로형, H: 가로형, M: 복합형)
-    V_MOEUM = [0, 1, 2, 3, 4, 5, 6, 7, 20]  # ㅏ, ㅐ, ㅑ, ㅓ, ㅣ 등
-    H_MOEUM = [8, 12, 13, 17, 18]           # ㅗ, ㅛ, ㅜ, ㅠ, ㅡ
-    M_MOEUM = [9, 10, 11, 14, 15, 16, 19]   # ㅘ, ㅝ, ㅢ 등
-
-    # 0~1 사이로 정규화된 자모 기본 획 (디자인 딕셔너리)
-    # *여기에 없는 겹자음/겹모음은 필요시 추가하시면 됩니다.*
-    JAMO_STROKES = {
-        # 기본 자음
-        'ㄱ': [[(0.1, 0.1), (0.9, 0.1), (0.9, 0.9)]],
-        'ㄴ': [[(0.1, 0.1), (0.1, 0.9), (0.9, 0.9)]],
-        'ㄷ': [[(0.1, 0.1), (0.9, 0.1)], [(0.1, 0.1), (0.1, 0.9), (0.9, 0.9)]],
-        'ㄹ': [[(0.1, 0.1), (0.9, 0.1), (0.9, 0.5), (0.1, 0.5), (0.1, 0.9), (0.9, 0.9)]],
-        'ㅁ': [[(0.1, 0.1), (0.1, 0.9)], [(0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9)]],
-        'ㅂ': [[(0.2, 0.1), (0.2, 0.9)], [(0.8, 0.1), (0.8, 0.9)], [(0.2, 0.5), (0.8, 0.5)], [(0.2, 0.9), (0.8, 0.9)]],
-        'ㅅ': [[(0.5, 0.1), (0.1, 0.9)], [(0.5, 0.5), (0.9, 0.9)]],
-        'ㅇ': [[(0.5, 0.1), (0.2, 0.3), (0.2, 0.7), (0.5, 0.9), (0.8, 0.7), (0.8, 0.3), (0.5, 0.1)]], # 팔각형 근사
-        'ㅈ': [[(0.1, 0.1), (0.9, 0.1)], [(0.5, 0.1), (0.1, 0.9)], [(0.5, 0.5), (0.9, 0.9)]],
-        'ㅊ': [[(0.4, 0.0), (0.6, 0.0)], [(0.1, 0.2), (0.9, 0.2)], [(0.5, 0.2), (0.1, 0.9)], [(0.5, 0.5), (0.9, 0.9)]],
-        'ㅋ': [[(0.1, 0.1), (0.9, 0.1), (0.9, 0.9)], [(0.1, 0.5), (0.9, 0.5)]],
-        'ㅌ': [[(0.1, 0.1), (0.9, 0.1)], [(0.1, 0.5), (0.9, 0.5)], [(0.1, 0.1), (0.1, 0.9), (0.9, 0.9)]],
-        'ㅍ': [[(0.1, 0.1), (0.9, 0.1)], [(0.3, 0.1), (0.3, 0.9)], [(0.7, 0.1), (0.7, 0.9)], [(0.1, 0.9), (0.9, 0.9)]],
-        'ㅎ': [[(0.4, 0.0), (0.6, 0.0)], [(0.2, 0.2), (0.8, 0.2)], [(0.5, 0.3), (0.3, 0.5), (0.5, 0.7), (0.7, 0.5), (0.5, 0.3)]],
-
-        # 쌍자음 (초성/종성 공통) - 왼쪽(0.0~0.4)과 오른쪽(0.5~0.9)으로 분할 배치
-        'ㄲ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.9)], 
-              [(0.5, 0.1), (0.9, 0.1), (0.9, 0.9)]],
-        'ㄸ': [[(0.0, 0.1), (0.4, 0.1)], [(0.0, 0.1), (0.0, 0.9), (0.4, 0.9)],
-              [(0.5, 0.1), (0.9, 0.1)], [(0.5, 0.1), (0.5, 0.9), (0.9, 0.9)]],
-        'ㅃ': [[(0.1, 0.1), (0.1, 0.9)], [(0.4, 0.1), (0.4, 0.9)], [(0.1, 0.5), (0.4, 0.5)], [(0.1, 0.9), (0.4, 0.9)],
-              [(0.6, 0.1), (0.6, 0.9)], [(0.9, 0.1), (0.9, 0.9)], [(0.6, 0.5), (0.9, 0.5)], [(0.6, 0.9), (0.9, 0.9)]],
-        'ㅆ': [[(0.2, 0.1), (0.0, 0.9)], [(0.2, 0.5), (0.4, 0.9)],
-              [(0.7, 0.1), (0.5, 0.9)], [(0.7, 0.5), (0.9, 0.9)]],
-        'ㅉ': [[(0.0, 0.1), (0.4, 0.1)], [(0.2, 0.1), (0.0, 0.9)], [(0.2, 0.5), (0.4, 0.9)],
-              [(0.5, 0.1), (0.9, 0.1)], [(0.7, 0.1), (0.5, 0.9)], [(0.7, 0.5), (0.9, 0.9)]],
-
-        # 겹받침 (종성 전용) - 왼쪽/오른쪽 자음을 작게 구성
-        'ㄳ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.9)],               # ㄱ
-              [(0.7, 0.1), (0.5, 0.9)], [(0.7, 0.5), (0.9, 0.9)]], # ㅅ
-        'ㄵ': [[(0.0, 0.1), (0.0, 0.9), (0.4, 0.9)],               # ㄴ
-              [(0.5, 0.1), (0.9, 0.1)], [(0.7, 0.1), (0.5, 0.9)], [(0.7, 0.5), (0.9, 0.9)]], # ㅈ
-        'ㄶ': [[(0.0, 0.1), (0.0, 0.9), (0.4, 0.9)],               # ㄴ
-              [(0.6, 0.0), (0.8, 0.0)], [(0.5, 0.2), (0.9, 0.2)], [(0.7, 0.4), (0.5, 0.6), (0.7, 0.8), (0.9, 0.6), (0.7, 0.4)]], # ㅎ
-        'ㄺ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.5), (0.0, 0.5), (0.0, 0.9), (0.4, 0.9)], # ㄹ
-              [(0.5, 0.1), (0.9, 0.1), (0.9, 0.9)]],               # ㄱ
-        'ㄻ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.5), (0.0, 0.5), (0.0, 0.9), (0.4, 0.9)], # ㄹ
-              [(0.5, 0.1), (0.5, 0.9)], [(0.5, 0.1), (0.9, 0.1), (0.9, 0.9), (0.5, 0.9)]], # ㅁ
-        'ㄼ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.5), (0.0, 0.5), (0.0, 0.9), (0.4, 0.9)], # ㄹ
-              [(0.6, 0.1), (0.6, 0.9)], [(0.9, 0.1), (0.9, 0.9)], [(0.6, 0.5), (0.9, 0.5)], [(0.6, 0.9), (0.9, 0.9)]], # ㅂ
-        'ㄽ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.5), (0.0, 0.5), (0.0, 0.9), (0.4, 0.9)], # ㄹ
-              [(0.7, 0.1), (0.5, 0.9)], [(0.7, 0.5), (0.9, 0.9)]], # ㅅ
-        'ㄾ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.5), (0.0, 0.5), (0.0, 0.9), (0.4, 0.9)], # ㄹ
-              [(0.5, 0.1), (0.9, 0.1)], [(0.5, 0.5), (0.9, 0.5)], [(0.5, 0.1), (0.5, 0.9), (0.9, 0.9)]], # ㅌ
-        'ㄿ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.5), (0.0, 0.5), (0.0, 0.9), (0.4, 0.9)], # ㄹ
-              [(0.5, 0.1), (0.9, 0.1)], [(0.6, 0.1), (0.6, 0.9)], [(0.8, 0.1), (0.8, 0.9)], [(0.5, 0.9), (0.9, 0.9)]], # ㅍ
-        'ㅀ': [[(0.0, 0.1), (0.4, 0.1), (0.4, 0.5), (0.0, 0.5), (0.0, 0.9), (0.4, 0.9)], # ㄹ
-              [(0.6, 0.0), (0.8, 0.0)], [(0.5, 0.2), (0.9, 0.2)], [(0.7, 0.4), (0.5, 0.6), (0.7, 0.8), (0.9, 0.6), (0.7, 0.4)]], # ㅎ
-        'ㅄ': [[(0.0, 0.1), (0.0, 0.9)], [(0.4, 0.1), (0.4, 0.9)], [(0.0, 0.5), (0.4, 0.5)], [(0.0, 0.9), (0.4, 0.9)], # ㅂ
-              [(0.7, 0.1), (0.5, 0.9)], [(0.7, 0.5), (0.9, 0.9)]], # ㅅ
-        
-        # 기본 모음
-        'ㅏ': [[(0.3, 0.1), (0.3, 0.9)], [(0.3, 0.5), (0.8, 0.5)]],
-        'ㅑ': [[(0.3, 0.1), (0.3, 0.9)], [(0.3, 0.4), (0.8, 0.4)], [(0.3, 0.6), (0.8, 0.6)]],
-        'ㅓ': [[(0.8, 0.1), (0.8, 0.9)], [(0.3, 0.5), (0.8, 0.5)]],
-        'ㅕ': [[(0.8, 0.1), (0.8, 0.9)], [(0.3, 0.4), (0.8, 0.4)], [(0.3, 0.6), (0.8, 0.6)]],
-        'ㅗ': [[(0.1, 0.7), (0.9, 0.7)], [(0.5, 0.2), (0.5, 0.7)]],
-        'ㅛ': [[(0.1, 0.7), (0.9, 0.7)], [(0.3, 0.2), (0.3, 0.7)], [(0.7, 0.2), (0.7, 0.7)]],
-        'ㅜ': [[(0.1, 0.3), (0.9, 0.3)], [(0.5, 0.3), (0.5, 0.8)]],
-        'ㅠ': [[(0.1, 0.3), (0.9, 0.3)], [(0.3, 0.3), (0.3, 0.8)], [(0.7, 0.3), (0.7, 0.8)]],
-        'ㅡ': [[(0.1, 0.5), (0.9, 0.5)]],
-        'ㅣ': [[(0.5, 0.1), (0.5, 0.9)]],
-
-        # 겹모음
-        'ㅐ': [[(0.3, 0.1), (0.3, 0.9)], [(0.3, 0.5), (0.8, 0.5)], [(0.8, 0.1), (0.8, 0.9)]],
-        'ㅔ': [[(0.1, 0.5), (0.4, 0.5)], [(0.4, 0.1), (0.4, 0.9)], [(0.8, 0.1), (0.8, 0.9)]],
-        'ㅒ': [[(0.3, 0.1), (0.3, 0.9)], [(0.3, 0.4), (0.8, 0.4)], [(0.3, 0.6), (0.8, 0.6)], [(0.8, 0.1), (0.8, 0.9)]],
-        'ㅖ': [[(0.1, 0.4), (0.4, 0.4)], [(0.1, 0.6), (0.4, 0.6)], [(0.4, 0.1), (0.4, 0.9)], [(0.8, 0.1), (0.8, 0.9)]],
-
-        # 복합 모음 (초성 자리를 피해 좌측 하단과 우측에 배치)
-        'ㅘ': [[(0.3, 0.5), (0.3, 0.8)], [(0.1, 0.8), (0.8, 0.8)], [(0.8, 0.1), (0.8, 0.9)], [(0.8, 0.5), (0.9, 0.5)]],
-        'ㅙ': [[(0.3, 0.5), (0.3, 0.8)], [(0.1, 0.8), (0.7, 0.8)], [(0.7, 0.1), (0.7, 0.9)], [(0.7, 0.5), (0.9, 0.5)], [(0.9, 0.1), (0.9, 0.9)]],
-        'ㅚ': [[(0.4, 0.5), (0.4, 0.8)], [(0.1, 0.8), (0.8, 0.8)], [(0.8, 0.1), (0.8, 0.9)]],
-        'ㅝ': [[(0.1, 0.6), (0.7, 0.6)], [(0.4, 0.6), (0.4, 0.9)], [(0.7, 0.5), (0.9, 0.5)], [(0.9, 0.1), (0.9, 0.9)]],
-        'ㅞ': [[(0.1, 0.6), (0.6, 0.6)], [(0.3, 0.6), (0.3, 0.9)], [(0.6, 0.4), (0.75, 0.4)], [(0.75, 0.1), (0.75, 0.9)], [(0.9, 0.1), (0.9, 0.9)]],
-        'ㅟ': [[(0.1, 0.6), (0.7, 0.6)], [(0.4, 0.6), (0.4, 0.9)], [(0.8, 0.1), (0.8, 0.9)]],
-        'ㅢ': [[(0.1, 0.7), (0.7, 0.7)], [(0.8, 0.1), (0.8, 0.9)]],
-    }
-
-    @staticmethod
-    def scale_strokes(char_jamo, bx, by, bw, bh):
-        """0~1 기준 좌표를 Bounding Box에 맞춰 크기/위치 변환"""
-        if char_jamo not in HangulEngine.JAMO_STROKES:
-            return []
-        
-        strokes = HangulEngine.JAMO_STROKES[char_jamo]
-        transformed = []
-        for stroke in strokes:
-            new_stroke = []
-            for (x, y) in stroke:
-                real_x = bx + (x * bw)
-                real_y = by + (y * bh)
-                new_stroke.append((real_x, real_y))
-            transformed.append(new_stroke)
-        return transformed
-
-    @classmethod
-    def get_char_strokes(cls, char, box_width=40.0, box_height=40.0):
-        """한 글자를 받아 해당 글자의 로봇 궤적(획 리스트)을 반환"""
-        # 띄어쓰기 처리
-        if char == " ": return []
-        
-        code = ord(char)
-        # 한글이 아닌 경우 빈 배열 반환 (필요시 영어/기호 추가 가능)
-        if code < 0xAC00 or code > 0xD7A3:
-            return []
-
-        # 한글 유니코드 분리
-        offset = code - 0xAC00
-        jong_idx = offset % 28
-        jung_idx = (offset // 28) % 21
-        cho_idx = (offset // 28) // 21
-
-        cho_char = cls.CHO[cho_idx]
-        jung_char = cls.JUNG[jung_idx]
-        jong_char = cls.JONG[jong_idx]
-
-        strokes = []
-        has_jong = jong_idx != 0
-
-        # 종성 유무에 따른 상/하단 높이 배분
-        top_h = box_height * 0.6 if has_jong else box_height
-        bot_h = box_height * 0.4 if has_jong else 0
-        bot_y = box_height * 0.6
-
-        # 모음 형태에 따른 초/중성 레이아웃 분할
-        if jung_idx in cls.V_MOEUM:   # 세로형 (가, 강)
-            strokes.extend(cls.scale_strokes(cho_char, 0, 0, box_width * 0.5, top_h))
-            strokes.extend(cls.scale_strokes(jung_char, box_width * 0.5, 0, box_width * 0.5, top_h))
-        elif jung_idx in cls.H_MOEUM: # 가로형 (고, 공)
-            strokes.extend(cls.scale_strokes(cho_char, 0, 0, box_width, top_h * 0.5))
-            strokes.extend(cls.scale_strokes(jung_char, 0, top_h * 0.5, box_width, top_h * 0.5))
-        else:                         # 복합형 (과, 광)
-            strokes.extend(cls.scale_strokes(cho_char, 0, 0, box_width * 0.5, top_h * 0.5))
-            strokes.extend(cls.scale_strokes(jung_char, 0, 0, box_width, top_h))
-
-        # 종성 렌더링
-        if has_jong:
-            strokes.extend(cls.scale_strokes(jong_char, 0, bot_y, box_width, bot_h))
-
-        return strokes
 
 # ==========================================
 # [2] 글쓰기 작업
@@ -212,7 +50,7 @@ class WriteTask:
         self.is_running = False
         self.pen_dropped = False
 
-        # 🌟 OnRobot RG2 그리퍼 초기화
+        # OnRobot RG2 그리퍼 초기화
         # 주의: OnRobot Compute Box의 실제 IP로 변경해야 할 수 있습니다. (기본값: 192.168.1.1)
         self.cb_ip = '192.168.1.1' 
         self.dev = Device(Global_cbip=self.cb_ip)
@@ -260,10 +98,10 @@ class WriteTask:
                     current_width = self.gripper.get_width(self.t_index)
                     is_gripped = self.gripper.isGripped(self.t_index)
                     
-                    # 💡 이쑤시개(3mm)와 붓펜(10mm) 모두 20.0mm 이하로 닫히면 놓친 것으로 판단
+                    # 이쑤시개(3mm)와 붓펜(10mm) 모두 20.0mm 이하로 닫히면 놓친 것으로 판단
                     # 또는 isGripped 센서가 False(놓침)로 변하면 즉시 정지
                     if current_width < 15.0 or not is_gripped: 
-                        logger.error(f"🚨 [경고] 펜 놓침 감지! (현재 너비: {current_width:.1f}mm) 즉시 정지합니다.")
+                        logger.error(f"[경고] 펜 놓침 감지! (현재 너비: {current_width:.1f}mm) 즉시 정지합니다.")
                         self.pen_dropped = True
                         print("펜 놓침 감지: 모션 강제 종료")
                         break
@@ -279,7 +117,7 @@ class WriteTask:
             pos_pen_pick  = posx([323.75, -171.5, 152, 0.0, 180.0, 0.0])
             pos_pen_drop  = posx([323.75, -171.5, 170, 0.0, 180.0, 0.0])
 
-            # 🌟 디지털 출력 대신 라이브러리로 그리퍼 열기 (100mm 너비로 열기, 힘 40N, 대기)
+            # 디지털 출력 대신 라이브러리로 그리퍼 열기 (100mm 너비로 열기, 힘 40N, 대기)
             self.gripper.move(self.t_index, twidth=50.0, tforce=40.0, fwait=True)
             
             # 2. 붓펜 잡으러 가기
@@ -287,7 +125,7 @@ class WriteTask:
             movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
             movel(pos_pen_pick, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             
-            # 🌟 그리퍼로 펜 잡기 (목표 너비 0mm로 세팅하면 펜(3mm/10mm)을 만날 때까지 닫힙니다)
+            # 그리퍼로 펜 잡기 (목표 너비 0mm로 세팅하면 펜(3mm/10mm)을 만날 때까지 닫힙니다)
             # fwait=True 로 설정하여 파지가 끝날 때까지 코드가 대기합니다.
             self.gripper.grip(self.t_index, twidth=0.0, tforce=40.0, fwait=True)
             
@@ -314,7 +152,7 @@ class WriteTask:
             
             self.pen_state = "up"
             
-            # 💡 [중요] 펜이 떨어졌으면(self.pen_dropped == True) 명령을 무시하도록 방어 코드 추가
+            # [중요] 펜이 떨어졌으면(self.pen_dropped == True) 명령을 무시하도록 방어 코드 추가
             def move_rel(dx, dy, dz=0.0, v=self.DRAW_VEL, a=self.DRAW_ACC):
                 if self.pen_dropped: raise Exception("펜 놓침: 모션 강제 종료")
                 if abs(dx) < self.EPS and abs(dy) < self.EPS and abs(dz) < self.EPS: return
@@ -377,8 +215,8 @@ class WriteTask:
                 movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
                 movel(pos_pen_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
                 
-                # 🌟 다 쓰고 나서 그리퍼 열어서 놓기
-                self.gripper.move(self.t_index, twidth=100.0, tforce=40.0, fwait=True)
+                # 다 쓰고 나서 그리퍼 열어서 놓기
+                self.gripper.move(self.t_index, twidth=50.0, tforce=40.0, fwait=True)
                 
                 movel(pos_pen_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
                 movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
@@ -387,12 +225,18 @@ class WriteTask:
 
         except Exception as e:
             if self.pen_dropped:
-                logger.error("동작 중 펜을 놓쳐서 작업을 안전하게 중단했습니다.")
+                logger.error("동작 중 펜을 놓쳐서 작업을 안전하게 중단하고 홈으로 복귀합니다.")
+                try:
+                    curr_pos = get_current_posx(ref=DR_BASE)[0]
+                    curr_pos[2] = 250.0
+                    movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                    movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
+                except Exception:
+                    pass
             else:
                 logger.error(f"글쓰기 중 에러: {e}")
         finally:
-            self.is_running = False # 예외 발생 시에도 스레드 종료 보장
-            
+            self.is_running = False
         return success
 
 
@@ -479,8 +323,12 @@ class BrailleTask:
         from DSR_ROBOT2 import (movej, movel, set_digital_output, wait, 
                                 set_ref_coord, task_compliance_ctrl, set_desired_force, 
                                 release_force, release_compliance_ctrl, check_force_condition, get_current_posx,
-                                DR_TOOL, DR_BASE, DR_AXIS_Z, DR_MV_MOD_REL, set_stiffnessx, get_tool_force)
+                                DR_TOOL, DR_BASE, DR_AXIS_Z, DR_MV_MOD_REL, set_stiffnessx, get_tool_force,
+                                check_position_condition) # 💡 위치 검증을 위한 라이브러리 추가
         from DR_common2 import posx, posj
+
+        self.braille_error = False
+
         if len(data_list) > 0 and data_list[-1] > 1: # 점자는 0과 1로만 이루어지므로 1 초과면 폰트 사이즈임
             letter_size = float(data_list.pop())
         else:
@@ -532,6 +380,9 @@ class BrailleTask:
 
             def punch_dot():
                 safe_pos = get_current_posx(ref=DR_BASE)[0]
+                start_z = safe_pos[2]
+                penetration_z = start_z - 16.0
+                
                 try:
                     # 1. 컴플라이언스 켜기 (유연한 상태로 진입 준비)
                     set_ref_coord(DR_TOOL)
@@ -559,6 +410,11 @@ class BrailleTask:
                         if not check_force_condition(DR_AXIS_Z, min=target_force, ref=DR_TOOL):
                             print(f"[FORCE 점자] 타각 접촉 감지! Fz={current_force[2]:.2f}N")
                             break
+
+                        if not check_position_condition(DR_AXIS_Z, min=-1000.0, max=penetration_z, ref=DR_BASE):
+                            print(f"[경고] 점자 관통 감지! (Z < {penetration_z:.1f}) 즉시 정지합니다.")
+                            self.braille_error = True
+                            raise Exception("점자 관통 발생: 모션 강제 종료")
                             
                         if time.time() - start_time > 3.0:
                             print("[ERROR] 점자 타각 타임아웃!")
@@ -590,27 +446,35 @@ class BrailleTask:
                     move_rel(self.CHAR_OFFSET - char_cur_x, -char_cur_y)
 
             # 4. 점자 타각 완료 후 이쑤시개 반납
-            logger.info("점자 타각 완료, 툴 반납 중...")
-            
-            curr_pos = get_current_posx(ref=DR_BASE)[0]
-            curr_pos[2] = 242.5
-            movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
-            
-            # 반납 시에도 self 적용된 변수 사용
-            movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
-            movel(self.pos_tool_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
-            
-            set_digital_output(1, 0); set_digital_output(2, 1) # 오픈 (이쑤시개 놓기)
-            wait(1.0)
-            
-            movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
-            movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
-            
-            success = True
+            if not self.braille_error:
+                logger.info("점자 타각 완료, 툴 반납 중...")
+                curr_pos = get_current_posx(ref=DR_BASE)[0]
+                curr_pos[2] = 242.5
+                movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                
+                movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+                movel(self.pos_tool_drop, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                
+                set_digital_output(1, 0); set_digital_output(2, 1)
+                wait(1.0)
+                
+                movel(self.pos_tool_above, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC, ref=DR_BASE)
+                movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
+                success = True
 
         except Exception as e:
-            logger.error(f"점자 에러: {e}")
-            
+            if self.braille_error:
+                logger.error("동작 중 점자 관통 또는 타임아웃이 발생하여 안전하게 중단하고 홈으로 복귀합니다.")
+                try:
+                    curr_pos = get_current_posx(ref=DR_BASE)[0]
+                    curr_pos[2] = 250.0
+                    movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                    movej(Q1, vel=self.MOVEJ_VEL, acc=self.MOVEJ_ACC)
+                except Exception:
+                    pass
+            else:
+                logger.error(f"점자 에러: {e}")
+
         return success
 
 # ==========================================
@@ -626,15 +490,46 @@ class StampTask:
         self.Z_ACC = z_acc
         self.PRESS_FORCE = press_force
 
+        # 안전 제어를 위한 RG2 그리퍼 및 상태 플래그 초기화
+        self.is_running = False
+        self.stamp_dropped = False
+
+        self.cb_ip = '192.168.1.1' 
+        self.dev = Device(Global_cbip=self.cb_ip)
+        self.gripper = RG(self.dev)
+        self.t_index = 0
+
     def execute(self, logger):
-        from DSR_ROBOT2 import (movej, movel, set_digital_output, wait, 
-                                set_ref_coord, task_compliance_ctrl, set_desired_force, 
+        from DSR_ROBOT2 import (movej, movel, wait, 
+                                set_ref_coord, task_compliance_ctrl, set_desired_force, set_digital_output, set_stiffnessx, 
                                 release_force, release_compliance_ctrl, check_force_condition,
-                                set_stiffnessx, get_tool_force,
+                                set_stiffnessx, get_tool_force, get_current_posx,
                                 DR_TOOL, DR_BASE, DR_AXIS_Z)
         from DR_common2 import posx, posj
         
         success = False
+        self.is_running = True
+        self.stamp_dropped = False
+
+        if not self.gripper.isConnected(self.t_index):
+            logger.error("RG2 그리퍼와 통신할 수 없습니다. IP 주소나 랜선 연결을 확인하세요.")
+            return False
+
+
+        def monitor_grip():
+            while self.is_running:
+                try:
+                    current_width = self.gripper.get_width(self.t_index)
+                    is_gripped = self.gripper.isGripped(self.t_index)
+                    # 도장 파지 감지 (도장이 15.0mm 이하로 닫히거나 놓치면 정지)
+                    if current_width < 15.0 or not is_gripped: 
+                        logger.error(f"[경고] 도장 놓침 감지! (현재 너비: {current_width:.1f}mm) 즉시 정지합니다.")
+                        self.stamp_dropped = True
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.1)
+        
         try:
             Q_HOME = posj([0.0, 25.0, 55.0, 0.0, 100.0, 0.0])
             
@@ -663,6 +558,11 @@ class StampTask:
             movel(pos_ink, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
             set_digital_output(1, 1); set_digital_output(2, 0)
             wait(1.0)
+            monitor_thread = threading.Thread(target=monitor_grip)
+            monitor_thread.daemon = True
+            monitor_thread.start()  
+            if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
+
             set_desired_force([0.0, 0.0, self.PRESS_FORCE, 0.0, 0.0, 0.0], dir=[0, 0, 1, 0, 0, 0], mod=1)
 
             target_force = self.PRESS_FORCE * 0.8
@@ -670,6 +570,7 @@ class StampTask:
             start_time = time.time()
             
             while True:
+                if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
                 current_force = get_tool_force()
                 force_check_count += 1
                 if force_check_count % 10 == 0:
@@ -689,14 +590,17 @@ class StampTask:
             release_compliance_ctrl()
             
             # 인주 찍고 다시 상승
+            if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
             movel(pos_ink_above, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
 
             # ==========================================
             # [도장 찍기]
             # ==========================================
+            if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
             logger.info("도장 찍을 위치로 이동")
             movel(pos_stamp_above, vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_BASE)
 
+            if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
             logger.info("힘 제어로 도장 찍기 시작")
             set_ref_coord(DR_TOOL)
             task_compliance_ctrl()
@@ -710,6 +614,7 @@ class StampTask:
             start_time = time.time()
 
             while True:
+                if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
                 current_force = get_tool_force()
                 force_check_count += 1
                 if force_check_count % 10 == 0:
@@ -729,9 +634,11 @@ class StampTask:
             release_compliance_ctrl()
             
             # 도장 찍고 상승
+            if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
             movel(pos_stamp_above, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
 
             # 5. 종료 작업
+            if self.stamp_dropped: raise Exception("도장 놓침: 모션 강제 종료")
             logger.info("도장 찍기 완료, 반납 후 홈 복귀")
             movel(pos_ink_above, vel=self.MOVE_VEL, acc=self.MOVE_ACC, ref=DR_BASE)
             movel(pos_ink, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
@@ -744,7 +651,22 @@ class StampTask:
             success = True
 
         except Exception as e:
-            logger.error(f"도장 찍기 에러: {e}")
+            if self.stamp_dropped:
+                logger.error("동작 중 도장을 놓쳐서 작업을 안전하게 중단하고 홈으로 복귀합니다.")
+                try:
+                    # 💡 진행중이던 힘 제어 상태를 강제 해제하고 위로 안전하게 회피
+                    release_force(time=0.0)
+                    release_compliance_ctrl()
+                    curr_pos = get_current_posx(ref=DR_BASE)[0]
+                    curr_pos[2] = 250.0
+                    movel(curr_pos, vel=self.Z_VEL, acc=self.Z_ACC, ref=DR_BASE)
+                    movej(Q_HOME, vel=self.MOVE_VEL, acc=self.MOVE_ACC)
+                except Exception:
+                    pass
+            else:
+                logger.error(f"도장 찍기 에러: {e}")
+        finally:
+            self.is_running = False
             
         return success
 

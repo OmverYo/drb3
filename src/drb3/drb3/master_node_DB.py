@@ -179,27 +179,29 @@ class MasterNode(Node):
                 self.finish_task(success=False)
 
     def finish_task(self, success):
-        """모든 공정 종료 후 DB의 translate_result를 TRUE로 변경"""
-        if success and self.current_exec_id:
+        """모든 공정 종료 후 DB 업데이트 (성공: 3, 실패: 4)"""
+        if self.current_exec_id:
             try:
                 conn = psycopg2.connect(**DB_CONFIG)
                 cur = conn.cursor()
                 
-                # 성공적으로 공정이 끝났으므로 상태를 TRUE로 업데이트
+                # 성공 여부에 따라 상태값 결정
+                new_status = 3 if success else 4
+                
                 cur.execute("""
                     UPDATE tasks 
-                    SET translate_status = 3
+                    SET translate_status = %s
                     WHERE exec_id = %s
-                """, (self.current_exec_id,))
+                """, (new_status, self.current_exec_id))
                 
                 conn.commit()
                 cur.close()
                 conn.close()
-                self.get_logger().info(f"DB 상태 갱신 완료 (ID: {self.current_exec_id}, translate_result = TRUE)")
+                status_str = "성공(3)" if success else "에러/실패(4)"
+                self.get_logger().info(f"DB 상태 갱신 완료 (ID: {self.current_exec_id}, translate_status = {status_str})")
             except Exception as e:
                 self.get_logger().error(f"DB 갱신 오류: {e}")
         
-        # 상태 초기화하여 다음 DB 작업 폴링 재개
         self.is_working = False
         self.current_exec_id = None
         
