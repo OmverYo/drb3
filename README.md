@@ -12,7 +12,7 @@
 | ⚙️ **주요 기능** | 한글 문장 점자 변환 · 점자 타각(Force Control) · 한글 캘리그라피 필기 · Topic 기반 진행률 피드백                            |
 | 🦾 **사용 장비** | Doosan Robotics **M0609** (GripperDA 그리퍼, 점필/펜 교체 사용)                                           |
 | 💻 **개발 환경** | Ubuntu 24.04 LTS · ROS2 Jazzy · Python 3.12.3 |
-| 🛠️ **기술 스택** | ROS2 Action · Compliance Control · Force Control · KorToBraille · HangulEngine |
+| 🛠️ **기술 스택** | ROS2 Topic · Compliance Control · Force Control · KorToBraille · HangulEngine |
 | 📅 **기간** | 2026.08.14 ~ 2026.08.28 |
 
 ---
