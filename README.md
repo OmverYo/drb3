@@ -26,7 +26,7 @@
 ## 🏗️ 시스템 아키텍처
 
 <p align="center">
-  <img src="./DOT.ON_flowchart-LJS.png" alt="시스템 설계도 이미지" width="400">
+  <img src="img width="1354" height="668" alt="Image" src="https://github.com/user-attachments/assets/198bfae1-3797-4787-a186-05cebe6986f0 " alt="시스템 설계도 이미지" width="400">
 </p>
 
 > PC(변환 로직)와 Doosan M0609 매니퓰레이터 간의 **ROS2 Action 통신 구조**입니다.
@@ -47,7 +47,7 @@
 * M0609 협동로봇과 그리퍼로 점필/펜을 교체하며 **타각과 필기 두 가지 작업**을 하나의 시스템에서 수행
 * **Compliance Control + Force Control**을 조합해 종이 두께 편차에도 안정적인 타각 구현
 * 한글 유니코드를 실시간 분해해 폰트 없이 캘리그라피 궤적을 동적으로 생성 (`HangulEngine`)
-* ROS2 **Action 통신**으로 문장 입력부터 로봇 실행, 진행률 피드백까지 전 과정 자동화
+* ROS2 **Topic 통신**으로 문장 입력부터 로봇 실행, 진행률 피드백까지 전 과정 자동화
 
 ### ✨ 주요기능
 
@@ -57,7 +57,7 @@
 | ✒️ 점자 타각 | Compliance Control + Force Control 기반으로 종이에 0.2N 단위로 정밀하게 점자를 타각 |
 | 🖋️ 한글 캘리그라피 | `HangulEngine`이 초성/중성/종성을 실시간 분해해 벡터 궤적 생성 후 필기 |
 | 📡 Action 기반 통신 | Goal 전송 → 실시간 진행률 Feedback → 성공 여부 Result 반환 |
-| 🛡️ 안전 설계 | 힘제어 해제 실패 시 로봇이 순응 제어 상태로 남지 않도록 예외처리, 비상정지(`DR_SSTOP`) 동작 검증 절차 포함 |
+| 🛡️ 안전 설계 | 힘제어 해제 실패 시 로봇이 순응 제어 상태로 남지 않도록 예외처리 검증 절차 포함 |
 
 ---
 
@@ -83,7 +83,7 @@ ros2 run drb3 control # master node로 부터 글자를 받고 실제 로봇을 
 * Python >= 3.12.3
 * `rclpy`, `std_msgs`
 * `dsr_common2`, `dsr_msgs`
-* `custom_interfaces` (`PrintBraille` action 정의)
+* `custom_interfaces` (`PrintBraille` Topic 정의)
 
 Python Requirements는 0_using_library.txt를 이용하여 pip install을 합니다.
 * `python3-venv` (Python 가상환경 설치)
