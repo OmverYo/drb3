@@ -29,7 +29,7 @@
 
 
 > PC(변환 로직)와 Doosan M0609 매니퓰레이터 간의 **ROS2 Topic 통신 구조**입니다.
-> `BrailleTopicClient`가 `print_braille_topic` 서버에 Goal을 전송하고, 로봇 제어 노드가 이를 받아 실행합니다.
+> `master_node`가 `robot_control` 노드에 Topic을 전송하고, 로봇 제어 노드가 이를 받아 실행합니다.
 
 ---
 
@@ -55,7 +55,7 @@
 | 🔤 한글 점자 변환 | `KorToBraille`로 입력 문장을 점자 데이터로 변환 후 6비트 단위로 평탄화 |
 | ✒️ 점자 타각 | Compliance Control + Force Control 기반으로 종이에 0.2N 단위로 정밀하게 점자를 타각 |
 | 🖋️ 한글 캘리그라피 | `HangulEngine`이 초성/중성/종성을 실시간 분해해 벡터 궤적 생성 후 필기 |
-| 📡 Topic 기반 통신 | Goal 전송 → 실시간 진행률 Feedback → 성공 여부 Result 반환 |
+| 📡 Topic 기반 통신 | 필요 데이터를 Topic으로 전달 -> 완료 결과를 Topic으로 전달 |
 | 🛡️ 안전 설계 | 힘제어 해제 실패 시 로봇이 순응 제어 상태로 남지 않도록 예외처리 검증 절차 포함 |
 
 ---
