@@ -11,7 +11,7 @@
 | 🎯 **목표** | 협동로봇을 활용해 점자 타각과 한글 캘리그라피를 동시에 구현하여, **시각장애인과 비장애인이 함께 즐길 수 있는 체험형 콘텐츠**를 제작하고 정밀 작업 적용 가능성을 검증 |
 | ⚙️ **주요 기능** | 한글 문장 점자 변환 · 점자 타각(Force Control) · 한글 캘리그라피 필기 · Topic 기반 진행률 피드백                            |
 | 🦾 **사용 장비** | Doosan Robotics **M0609** (GripperDA 그리퍼, 점필/펜 교체 사용)                                           |
-| 💻 **개발 환경** | Ubuntu 24.04 LTS · ROS2 Jazzy · Python 3.12.3 |
+| 💻 **개발 환경** | Ubuntu 24.04 LTS · ROS2 Jazzy · Python 3.12.3 · Dockerv 29.7.2 |
 | 🛠️ **기술 스택** | ROS2 Topic · Compliance Control · Force Control · KorToBraille · HangulEngine |
 | 📅 **기간** | 2026.08.14 ~ 2026.08.28 |
 
@@ -19,7 +19,7 @@
 
 ## 🎬 시연 영상
 
-> 🔗 [발표 시연 영상 링크 삽입](https://drive.google.com/file/d/1XctRZDlalCx3erfI6DE-vuEc5Dla5cA8/view?usp=drive_link)
+> 🔗 [발표 시연 영상 구글 드라이브 링크](https://drive.google.com/file/d/1XctRZDlalCx3erfI6DE-vuEc5Dla5cA8/view?usp=drive_link)
 
 ---
 
@@ -51,15 +51,9 @@
 | 🔤 한글 점자 변환 | `KorToBraille`로 입력 문장을 점자 데이터로 변환 후 6비트 단위로 평탄화 |
 | ✒️ 점자 타각 | Compliance Control + Force Control 기반으로 종이에 0.2N 단위로 정밀하게 점자를 타각 |
 | 🖋️ 한글 캘리그라피 | `HangulEngine`이 초성/중성/종성을 실시간 분해해 벡터 궤적 생성 후 필기 |
+| 📡 Socket 기반 통신 | 사용자의 요청(번역할 문장)을 소켓 메세지로 전달 -> 요청 내용을 받아 DB로 관리 |
 | 📡 Topic 기반 통신 | 필요 데이터를 Topic으로 전달 -> 완료 결과를 Topic으로 전달 |
 | 🛡️ 안전 설계 | 그리퍼 물건 모니터링 스레드 (강제 중단), 이쑤시게 관통 방지, 무한 대기 방지 |
-
----
-
-## 🖥️ 운영체제 환경 (OS Environment)
-```
-정섭님 추가분
-```
 
 ---
 ### 워크스페이스 빌드 (터미널에서 nano .bashrc 구성)
@@ -90,6 +84,34 @@ ros2 run drb3 master_DB # GUI와 연결하여 글자를 받고 점자로 번역�
 ros2 run drb3 control # master node로 부터 글자를 받고 실제 로봇을 움직이는 노드
 ```
 
+**Step 3 — 도커 환경 구축 및 실행**
+
+```bash
+docker pull postgres:16
+
+docker volume create robotdata
+
+docker run -d --name robotdb \
+-e POSTGRES_DB=translation_db \
+-e POSTGRES_USER=postgres \
+-e POSTGRES_PASSWORD=postgres \
+-v robotdata:/var/lib/postgresql/data \
+-p 5432:5432 \
+postgres:16
+```
+
+**Step 4 — 서버 실행**
+
+```bash
+python3 ~/ws_cobot_pjt/drb3/src_py/server.py
+```
+
+**Step 5 — 클라이언트 실행**
+
+```bash
+python3 ~/ws_cobot_pjt/drb3/src_py/client.py
+```
+
 ---
 
 ## 📦 의존성
@@ -97,12 +119,10 @@ ros2 run drb3 control # master node로 부터 글자를 받고 실제 로봇을 
 * `rclpy`, `std_msgs`
 * `dsr_common2`, `dsr_msgs`
 * `custom_interfaces` (PrintBraille Topic 정의)
-
-* `python3-venv` (Python 가상환경 설치와 pip install 용도)
-* `KorToBraille` (한글 → 점자 변환)
-* `psycopg2-binary` (파이썬 코드로 PostSQL DB 제어)
 * `rg2` (OnRobot rg2 그리퍼 API)
 
+* `KorToBraille==1.0.2`
+* `psycopg2-binary==2.9.12`
 ---
 
 ## 👥 프로젝트 기여자
