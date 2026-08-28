@@ -29,7 +29,7 @@
 
 
 > PC(변환 로직)와 Doosan M0609 매니퓰레이터 간의 **ROS2 Topic 통신 구조**입니다.
-> `BrailleActionClient`가 `print_braille_action` 서버에 Goal을 전송하고, 로봇 제어 노드가 이를 받아 실행합니다.
+> `BrailleTopicClient`가 `print_braille_topic` 서버에 Goal을 전송하고, 로봇 제어 노드가 이를 받아 실행합니다.
 
 ---
 
