@@ -19,17 +19,13 @@
 
 ## 🎬 시연 영상
 
-> 🔗 [발표 시연 영상 링크 삽입]
+> 🔗 [발표 시연 영상 링크 삽입](https://drive.google.com/file/d/1XctRZDlalCx3erfI6DE-vuEc5Dla5cA8/view?usp=drive_link)
 
 ---
 
 ## 🏗️ 시스템 아키텍처
 
 <img width="1354" height="668" alt="system_architecture_" src="https://github.com/user-attachments/assets/ae2b9d41-dd61-40c5-a27b-fe08ab9ab5aa" />
-
-
-> PC(변환 로직)와 Doosan M0609 매니퓰레이터 간의 **ROS2 Topic 통신 구조**입니다.
-> `master_node`가 `robot_control` 노드에 Topic을 전송하고, 로봇 제어 노드가 이를 받아 실행합니다.
 
 ---
 
@@ -56,9 +52,28 @@
 | ✒️ 점자 타각 | Compliance Control + Force Control 기반으로 종이에 0.2N 단위로 정밀하게 점자를 타각 |
 | 🖋️ 한글 캘리그라피 | `HangulEngine`이 초성/중성/종성을 실시간 분해해 벡터 궤적 생성 후 필기 |
 | 📡 Topic 기반 통신 | 필요 데이터를 Topic으로 전달 -> 완료 결과를 Topic으로 전달 |
-| 🛡️ 안전 설계 | 힘제어 해제 실패 시 로봇이 순응 제어 상태로 남지 않도록 예외처리 검증 절차 포함 |
+| 🛡️ 안전 설계 | 그리퍼 물건 모니터링 스레드 (강제 중단), 이쑤시게 관통 방지, 무한 대기 방지 |
 
 ---
+
+## 🖥️ 운영체제 환경 (OS Environment)
+```
+정섭님 추가분
+```
+
+---
+### 워크스페이스 빌드 (터미널에서 nano .bashrc 구성)
+
+```
+export PATH=/home/rokey/.opencode/bin:$PATH
+source /opt/ros/jazzy/setup.bash
+
+export PYTHONPATH=$PYTHONPATH:~/ws_cobot_pjt/ws_dsr/install/dsr_common2/lib/dsr>
+
+export ROS_DOMAIN_ID=70  ## 조별로 번호가 다름
+alias sod='source ~/ws_cobot_pjt/ws_dsr/install/setup.bash && source ~/drb3/ins>
+```
+
 
 ## ⚙️ 실행 방법
 
@@ -79,17 +94,14 @@ ros2 run drb3 control # master node로 부터 글자를 받고 실제 로봇을 
 
 ## 📦 의존성
 
-* Python >= 3.12.3
 * `rclpy`, `std_msgs`
 * `dsr_common2`, `dsr_msgs`
-* `custom_interfaces` (`PrintBraille` Topic 정의)
+* `custom_interfaces` (PrintBraille Topic 정의)
 
-Python Requirements는 0_using_library.txt를 참고하여 설치합니다.
-* `python3-venv` (Python 가상환경 설치)
+* `python3-venv` (Python 가상환경 설치와 pip install 용도)
 * `KorToBraille` (한글 → 점자 변환)
 * `psycopg2-binary` (파이썬 코드로 PostSQL DB 제어)
-
-> ⚠️ **주의:** package.xml에 custom_interfaces, python3-venv, KorToBraille, psycopg2-binary의존성이 선언되어 있지 않습니다. 빌드 전 반드시 추가해 주세요.
+* `rg2` (OnRobot rg2 그리퍼 API)
 
 ---
 
