@@ -72,7 +72,7 @@ ros2 launch dsr_bringup2 dsr_bringup2_rviz.launch.py mode:=real host:=192.168.1.
 **Step 2 — 기능 실행**
 
 ```bash
-ros2 run drb3 master # GUI와 연결하여 글자를 받고 점자로 번역하는 노드
+ros2 run drb3 master_DB # GUI와 연결하여 글자를 받고 점자로 번역하는 노드
 ros2 run drb3 control # master node로 부터 글자를 받고 실제 로봇을 움직이는 노드
 ```
 
@@ -85,7 +85,7 @@ ros2 run drb3 control # master node로 부터 글자를 받고 실제 로봇을 
 * `dsr_common2`, `dsr_msgs`
 * `custom_interfaces` (`PrintBraille` action 정의)
 
-Python Requirements는 0_using_library.txt를 이용하여 pip install을 합니다.
+Python Requirements는 0_using_library.txt를 참고하여 설치합니다.
 * `python3-venv` (Python 가상환경 설치)
 * `KorToBraille` (한글 → 점자 변환)
 * `psycopg2-binary` (파이썬 코드로 PostSQL DB 제어)
@@ -125,6 +125,8 @@ Python Requirements는 0_using_library.txt를 이용하여 pip install을 합니
 
 ### 참고자료
 
-* 🔗 https://v2-manual.scroll.site/ko/v2-programming-manual/2.12.1/publish
-* 🔗 github.com/Bridge-NOONGIL/KorToBraille_Python
-* 🔗 robotlab.doosanrobotics.com
+* 🔗 [두산로보틱스 튜토리얼](https://robotlab.doosanrobotics.com/ko/Training/OnlineCourses)
+* 🔗 [두산로보틱스 M0609 API](https://v2-manual.scroll.site/ko/v2-programming-manual/2.12.1/publish)
+* 🔗 [한글에서 점자로 번역 GitHub 라이브러리](github.com/Bridge-NOONGIL/KorToBraille_Python)
+
+* 🔗 [서울 시각장애인 복지관](https://bokji.or.kr/)
