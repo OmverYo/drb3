@@ -28,7 +28,7 @@
 <img width="1354" height="668" alt="system_architecture_" src="https://github.com/user-attachments/assets/ae2b9d41-dd61-40c5-a27b-fe08ab9ab5aa" />
 
 
-> PC(변환 로직)와 Doosan M0609 매니퓰레이터 간의 **ROS2 Action 통신 구조**입니다.
+> PC(변환 로직)와 Doosan M0609 매니퓰레이터 간의 **ROS2 Topic 통신 구조**입니다.
 > `BrailleActionClient`가 `print_braille_action` 서버에 Goal을 전송하고, 로봇 제어 노드가 이를 받아 실행합니다.
 
 ---
